@@ -34,3 +34,6 @@ nul
 
 # Supabase local cache
 supabase/.temp
+
+# Tools (Supabase CLI and other binaries)
+tools/
