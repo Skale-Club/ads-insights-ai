@@ -1,0 +1,152 @@
+ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+ 
+ const corsHeaders = {
+   "Access-Control-Allow-Origin": "*",
+   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+ };
+ 
+ serve(async (req) => {
+   if (req.method === "OPTIONS") {
+     return new Response(null, { headers: corsHeaders });
+   }
+ 
+   try {
+     const authHeader = req.headers.get("Authorization");
+     if (!authHeader) {
+       throw new Error("Missing authorization header");
+     }
+ 
+     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+     const developerToken = Deno.env.get("GOOGLE_ADS_DEVELOPER_TOKEN");
+ 
+     if (!developerToken) {
+       throw new Error("GOOGLE_ADS_DEVELOPER_TOKEN not configured");
+     }
+ 
+     const supabase = createClient(supabaseUrl, supabaseKey);
+ 
+     // Get user from JWT
+     const token = authHeader.replace("Bearer ", "");
+     const { data: { user }, error: userError } = await supabase.auth.getUser(token);
+     
+     if (userError || !user) {
+       throw new Error("Invalid user token");
+     }
+ 
+     // Get the provider token from the request body
+     const { providerToken } = await req.json();
+     
+     if (!providerToken) {
+       throw new Error("Provider token not provided. Please re-authenticate with Google.");
+     }
+ 
+     // Call Google Ads API to list accessible customers
+     const customersResponse = await fetch(
+       "https://googleads.googleapis.com/v18/customers:listAccessibleCustomers",
+       {
+         method: "GET",
+         headers: {
+           "Authorization": `Bearer ${providerToken}`,
+           "developer-token": developerToken,
+           "Content-Type": "application/json",
+         },
+       }
+     );
+ 
+     if (!customersResponse.ok) {
+       const errorText = await customersResponse.text();
+       console.error("Google Ads API error:", errorText);
+       throw new Error(`Google Ads API error: ${customersResponse.status} - ${errorText}`);
+     }
+ 
+     const customersData = await customersResponse.json();
+     const resourceNames = customersData.resourceNames || [];
+ 
+     // Fetch details for each customer
+     const accounts = [];
+     
+     for (const resourceName of resourceNames) {
+       const customerId = resourceName.replace("customers/", "");
+       
+       try {
+         // Query customer details using Search API
+         const searchResponse = await fetch(
+           `https://googleads.googleapis.com/v18/customers/${customerId}/googleAds:searchStream`,
+           {
+             method: "POST",
+             headers: {
+               "Authorization": `Bearer ${providerToken}`,
+               "developer-token": developerToken,
+               "Content-Type": "application/json",
+               "login-customer-id": customerId,
+             },
+             body: JSON.stringify({
+               query: `
+                 SELECT 
+                   customer.id,
+                   customer.descriptive_name,
+                   customer.currency_code,
+                   customer.time_zone,
+                   customer.manager
+                 FROM customer
+                 LIMIT 1
+               `,
+             }),
+           }
+         );
+ 
+         if (searchResponse.ok) {
+           const searchData = await searchResponse.json();
+           const customerData = searchData[0]?.results?.[0]?.customer;
+           
+           if (customerData) {
+             accounts.push({
+               id: customerData.id,
+               customerId: customerData.id.replace(/(\d{3})(\d{3})(\d{4})/, "$1-$2-$3"),
+               name: customerData.descriptiveName || `Account ${customerData.id}`,
+               currencyCode: customerData.currencyCode,
+               timeZone: customerData.timeZone,
+               isManager: customerData.manager || false,
+             });
+           }
+         } else {
+           // If we can't get details, add with basic info
+           accounts.push({
+             id: customerId,
+             customerId: customerId.replace(/(\d{3})(\d{3})(\d{4})/, "$1-$2-$3"),
+             name: `Account ${customerId}`,
+             currencyCode: null,
+             timeZone: null,
+             isManager: false,
+           });
+         }
+       } catch (e) {
+         console.error(`Error fetching customer ${customerId}:`, e);
+         accounts.push({
+           id: customerId,
+           customerId: customerId.replace(/(\d{3})(\d{3})(\d{4})/, "$1-$2-$3"),
+           name: `Account ${customerId}`,
+           currencyCode: null,
+           timeZone: null,
+           isManager: false,
+         });
+       }
+     }
+ 
+     return new Response(JSON.stringify({ accounts }), {
+       headers: { ...corsHeaders, "Content-Type": "application/json" },
+     });
+   } catch (error) {
+     console.error("Error:", error);
+     const errorMessage = error instanceof Error ? error.message : "Unknown error";
+     return new Response(
+       JSON.stringify({ error: errorMessage }),
+       {
+         status: 400,
+         headers: { ...corsHeaders, "Content-Type": "application/json" },
+       }
+     );
+   }
+ });

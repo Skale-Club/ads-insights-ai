@@ -1,0 +1,34 @@
+[api]
+enabled = true
+port = 54321
+
+[db]
+port = 54322
+
+[studio]
+enabled = true
+port = 54323
+
+[auth]
+enabled = true
+site_url = "http://localhost:5173"
+
+[auth.external.google]
+enabled = true
+client_id = "env(GOOGLE_CLIENT_ID)"
+secret = "env(GOOGLE_CLIENT_SECRET)"
+
+# Edge Functions
+[functions]
+
+[functions.analyze-ads]
+verify_jwt = false
+ 
+ [functions.google-ads-accounts]
+ verify_jwt = false
+
+[functions.google-ads-reports]
+verify_jwt = false
+
+[functions.google-ads-mutate]
+verify_jwt = false
