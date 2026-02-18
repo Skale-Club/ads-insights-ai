@@ -266,6 +266,23 @@ npm run build
    npx supabase secrets set ADS_DEVELOPER_TOKEN=your_token
    ```
 
+### Keepalive Cron (Prevents Project Pausing)
+
+This repo includes `.github/workflows/supabase-keepalive.yml`, which runs daily and calls:
+
+- `POST /rest/v1/rpc/touch_project_keepalive`
+
+That RPC updates `public.project_keepalive_heartbeat` with:
+
+- `last_heartbeat_at` (timestamp)
+- `last_heartbeat_hour_utc` (hour in UTC)
+- `run_count` (how many times the job has run)
+
+Set these GitHub repository secrets before enabling the workflow:
+
+- `SUPABASE_URL` (example: `https://your-project-ref.supabase.co`)
+- `SUPABASE_SERVICE_ROLE_KEY`
+
 ---
 
 ## 🤝 Contributing
