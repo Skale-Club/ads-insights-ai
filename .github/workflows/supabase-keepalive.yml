@@ -11,26 +11,44 @@ jobs:
     steps:
       - name: Call keepalive RPC
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL || secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.SUPABASE_SERVICE_KEY }}
         run: |
           if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
-            echo "Missing GitHub secrets: SUPABASE_URL and/or SUPABASE_SERVICE_ROLE_KEY"
+            echo "Missing GitHub secrets. Set SUPABASE_URL (or VITE_SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SERVICE_KEY)."
             exit 1
           fi
 
-          response=$(curl -sS -w "\n%{http_code}" \
-            -X POST "${SUPABASE_URL}/rest/v1/rpc/touch_project_keepalive" \
+          normalized_url="${SUPABASE_URL%/}"
+          response_file="$(mktemp)"
+
+          set +e
+          status=$(curl -sS \
+            -o "$response_file" \
+            -w "%{http_code}" \
+            -X POST "${normalized_url}/rest/v1/rpc/touch_project_keepalive" \
             -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
             -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
             -H "Content-Type: application/json" \
             -d '{}')
+          curl_exit=$?
+          set -e
 
-          body=$(echo "$response" | head -n -1)
-          status=$(echo "$response" | tail -n 1)
+          body="$(cat "$response_file")"
+          rm -f "$response_file"
 
           echo "HTTP status: $status"
           echo "Response: $body"
+
+          if [ "$curl_exit" -ne 0 ]; then
+            echo "curl failed with exit code: $curl_exit"
+            exit 1
+          fi
+
+          if ! [[ "$status" =~ ^[0-9]{3}$ ]]; then
+            echo "Unexpected HTTP status returned by curl: $status"
+            exit 1
+          fi
 
           if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
             exit 1
