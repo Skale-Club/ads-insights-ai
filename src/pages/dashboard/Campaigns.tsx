@@ -354,29 +354,30 @@ export default function CampaignsPage() {
         </p>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-sm text-muted-foreground">Status filter:</span>
-        <Button
-          size="sm"
-          variant={showInactive ? 'outline' : 'default'}
-          onClick={() => setShowInactive(false)}
-        >
-          Active only
-        </Button>
-        <Button
-          size="sm"
-          variant={showInactive ? 'default' : 'outline'}
-          onClick={() => setShowInactive(true)}
-        >
-          Include inactive
-        </Button>
-      </div>
-
       <DataTable
         columns={columns}
         data={filteredCampaignData}
         searchColumn="name"
         searchPlaceholder="Search campaigns..."
+        searchActions={
+          <div className="flex items-center gap-2 flex-nowrap whitespace-nowrap">
+            <span className="text-sm text-muted-foreground">Status:</span>
+            <Button
+              size="sm"
+              variant={showInactive ? 'outline' : 'default'}
+              onClick={() => setShowInactive(false)}
+            >
+              Active only
+            </Button>
+            <Button
+              size="sm"
+              variant={showInactive ? 'default' : 'outline'}
+              onClick={() => setShowInactive(true)}
+            >
+              Include inactive
+            </Button>
+          </div>
+        }
         onExport={handleExport}
       />
     </div>

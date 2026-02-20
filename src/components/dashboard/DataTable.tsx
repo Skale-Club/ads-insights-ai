@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, type ReactNode } from 'react';
 import {
   flexRender,
   getCoreRowModel,
@@ -27,6 +27,7 @@ interface DataTableProps<TData, TValue> {
   data: TData[];
   searchColumn?: string;
   searchPlaceholder?: string;
+  searchActions?: ReactNode;
   onExport?: () => void;
 }
 
@@ -35,6 +36,7 @@ export function DataTable<TData, TValue>({
   data,
   searchColumn,
   searchPlaceholder = 'Search...',
+  searchActions,
   onExport,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -87,19 +89,24 @@ export function DataTable<TData, TValue>({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        {searchColumn && (
-          <div className="relative max-w-sm">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder={searchPlaceholder}
-              value={(table.getColumn(searchColumn)?.getFilterValue() as string) ?? ''}
-              onChange={(event) =>
-                table.getColumn(searchColumn)?.setFilterValue(event.target.value)
-              }
-              className="pl-9"
-            />
+        {(searchColumn || searchActions) ? (
+          <div className="flex items-center gap-2 flex-nowrap">
+            {searchColumn ? (
+              <div className="relative w-72 shrink-0">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder={searchPlaceholder}
+                  value={(table.getColumn(searchColumn)?.getFilterValue() as string) ?? ''}
+                  onChange={(event) =>
+                    table.getColumn(searchColumn)?.setFilterValue(event.target.value)
+                  }
+                  className="pl-9"
+                />
+              </div>
+            ) : null}
+            {searchActions}
           </div>
-        )}
+        ) : <div />}
         {onExport && (
           <Button variant="outline" onClick={onExport}>
             <Download className="mr-2 h-4 w-4" />
