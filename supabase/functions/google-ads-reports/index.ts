@@ -8,7 +8,7 @@ const corsHeaders = {
 
 const API_VERSION = "v20";
 
-type ReportType = "overview" | "campaigns" | "keywords" | "search_terms" | "daily_performance";
+type ReportType = "overview" | "campaigns" | "keywords" | "search_terms" | "daily_performance" | "adGroups" | "ads" | "audiences" | "budgets" | "conversions";
 
 function buildQuery(reportType: ReportType, startDate: string, endDate: string): string {
   switch (reportType) {
@@ -87,6 +87,23 @@ function buildQuery(reportType: ReportType, startDate: string, endDate: string):
           metrics.conversions
         FROM search_term_view
         WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+      `;
+
+    case "adGroups":
+      return `
+        SELECT
+          ad_group.id,
+          ad_group.name,
+          ad_group.status,
+          campaign.name,
+          metrics.cost_micros,
+          metrics.impressions,
+          metrics.clicks,
+          metrics.conversions,
+          metrics.average_cpc
+        FROM ad_group
+        WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+          AND ad_group.status != 'REMOVED'
       `;
 
     default:
@@ -278,6 +295,44 @@ function transformSearchTerms(results: any[]) {
   }));
 }
 
+function transformAdGroups(results: any[]) {
+  const adGroupMap: Record<string, any> = {};
+
+  for (const row of results) {
+    const id = row.adGroup?.id;
+    if (!id) continue;
+
+    if (!adGroupMap[id]) {
+      const status = (row.adGroup?.status || "").toLowerCase();
+      
+      adGroupMap[id] = {
+        id: String(id),
+        name: row.adGroup?.name || `Ad Group ${id}`,
+        campaignName: row.campaign?.name || "",
+        status: status === "enabled" ? "enabled" : "paused",
+        impressions: 0,
+        clicks: 0,
+        cost: 0,
+        conversions: 0,
+        avgCpc: 0,
+      };
+    }
+
+    const ag = adGroupMap[id];
+    ag.impressions += Number(row.metrics?.impressions || 0);
+    ag.clicks += Number(row.metrics?.clicks || 0);
+    ag.cost += microsToAmount(row.metrics?.costMicros || 0);
+    ag.conversions += Number(row.metrics?.conversions || 0);
+  }
+
+  return Object.values(adGroupMap).map((ag: any) => ({
+    ...ag,
+    ctr: ag.impressions > 0 ? (ag.clicks / ag.impressions) * 100 : 0,
+    avgCpc: ag.clicks > 0 ? ag.cost / ag.clicks : 0,
+    cpa: ag.conversions > 0 ? ag.cost / ag.conversions : 0,
+  }));
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -354,6 +409,9 @@ serve(async (req) => {
         break;
       case "search_terms":
         data = transformSearchTerms(results);
+        break;
+      case "adGroups":
+        data = transformAdGroups(results);
         break;
       default:
         throw new Error(`Unknown report type: ${reportType}`);

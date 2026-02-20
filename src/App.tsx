@@ -16,10 +16,16 @@ import AuthCallback from "@/pages/AuthCallback";
 import ConnectGoogleAdsPage from "@/pages/ConnectGoogleAds";
 import OverviewPage from "@/pages/dashboard/Overview";
 import CampaignsPage from "@/pages/dashboard/Campaigns";
+import AdGroupsPage from "@/pages/dashboard/AdGroups";
+import AdsPage from "@/pages/dashboard/Ads";
 import KeywordsPage from "@/pages/dashboard/Keywords";
 import SearchTermsPage from "@/pages/dashboard/SearchTerms";
+import AudiencesPage from "@/pages/dashboard/Audiences";
+import BudgetsPage from "@/pages/dashboard/Budgets";
+import ConversionsPage from "@/pages/dashboard/Conversions";
+import ReportsPage from "@/pages/dashboard/Reports";
 import RecommendationsPage from "@/pages/dashboard/Recommendations";
-import SettingsPage from "@/pages/Settings";
+import SettingsPage from "@/pages/settings";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -57,11 +63,17 @@ const App = () => (
                   </ProtectedRoute>
                 }
               >
-                <Route index element={<Navigate to="overview" replace />} />
+              <Route index element={<Navigate to="overview" replace />} />
                 <Route path="overview" element={<OverviewPage />} />
                 <Route path="campaigns" element={<CampaignsPage />} />
+                <Route path="ad-groups" element={<AdGroupsPage />} />
+                <Route path="ads" element={<AdsPage />} />
                 <Route path="keywords" element={<KeywordsPage />} />
                 <Route path="search-terms" element={<SearchTermsPage />} />
+                <Route path="audiences" element={<AudiencesPage />} />
+                <Route path="budgets" element={<BudgetsPage />} />
+                <Route path="conversions" element={<ConversionsPage />} />
+                <Route path="reports" element={<ReportsPage />} />
                 <Route path="recommendations" element={<RecommendationsPage />} />
               </Route>
 
