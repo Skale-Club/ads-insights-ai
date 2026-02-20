@@ -179,7 +179,7 @@ function buildQuery(reportType: ReportType, startDate: string, endDate: string):
           ad_group.name,
           campaign.name
         FROM ad_group_criterion
-        WHERE ad_group_criterion.type = 'NEGATIVE_KEYWORD'
+        WHERE ad_group_criterion.negative = true
           AND ad_group_criterion.status != 'REMOVED'
       `;
 
@@ -627,7 +627,7 @@ async function fetchNegativeKeywordsBothLevels(
       ad_group.name,
       campaign.name
     FROM ad_group_criterion
-    WHERE ad_group_criterion.type = 'NEGATIVE_KEYWORD'
+    WHERE ad_group_criterion.negative = true
       AND ad_group_criterion.status != 'REMOVED'
   `;
 
@@ -639,7 +639,7 @@ async function fetchNegativeKeywordsBothLevels(
       campaign_criterion.status,
       campaign.name
     FROM campaign_criterion
-    WHERE campaign_criterion.type = 'NEGATIVE_KEYWORD'
+    WHERE campaign_criterion.negative = true
       AND campaign_criterion.status != 'REMOVED'
   `;
 
@@ -736,7 +736,7 @@ async function fetchNegativeKeywordsWithErrorDetails(
       ad_group.name,
       campaign.name
     FROM ad_group_criterion
-    WHERE ad_group_criterion.type = 'NEGATIVE_KEYWORD'
+    WHERE ad_group_criterion.negative = true
       AND ad_group_criterion.status != 'REMOVED'
   `;
 
@@ -748,7 +748,7 @@ async function fetchNegativeKeywordsWithErrorDetails(
       campaign_criterion.status,
       campaign.name
     FROM campaign_criterion
-    WHERE campaign_criterion.type = 'NEGATIVE_KEYWORD'
+    WHERE campaign_criterion.negative = true
       AND campaign_criterion.status != 'REMOVED'
   `;
 
