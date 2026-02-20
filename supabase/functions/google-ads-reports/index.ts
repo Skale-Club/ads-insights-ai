@@ -154,6 +154,21 @@ function buildQuery(reportType: ReportType, startDate: string, endDate: string):
         WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
       `;
 
+    case "conversions":
+      return `
+        SELECT
+          conversion_action.id,
+          conversion_action.name,
+          conversion_action.category,
+          conversion_action.status,
+          metrics.cost_micros,
+          metrics.conversions,
+          metrics.conversions_value,
+          metrics.clicks
+        FROM conversion_action
+        WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+      `;
+
     default:
       throw new Error(`Unknown report type: ${reportType}`);
   }
@@ -518,6 +533,55 @@ function transformBudgets(results: any[]) {
   }));
 }
 
+function transformConversions(results: any[]) {
+  const conversionMap: Record<string, any> = {};
+
+  for (const row of results) {
+    const id = row.conversionAction?.id;
+    if (!id) continue;
+
+    if (!conversionMap[id]) {
+      const status = (row.conversionAction?.status || "enabled").toLowerCase();
+      const category = (row.conversionAction?.category || "other").toLowerCase();
+      const categoryMap: Record<string, string> = {
+        "purchase": "Purchase",
+        "lead": "Lead",
+        "sign_up": "Sign Up",
+        "add_to_cart": "Add to Cart",
+        "begin_checkout": "Begin Checkout",
+        "subscribe": "Subscribe",
+        "download": "Download",
+        "page_view": "Page View",
+        "other": "Other",
+      };
+
+      conversionMap[id] = {
+        id: String(id),
+        name: row.conversionAction?.name || `Conversion ${id}`,
+        category: categoryMap[category] || category.replace(/_/g, " "),
+        status: status === "enabled" ? "enabled" : "paused",
+        conversions: 0,
+        cost: 0,
+        value: 0,
+        clicks: 0,
+      };
+    }
+
+    const conv = conversionMap[id];
+    conv.conversions += Number(row.metrics?.conversions || 0);
+    conv.cost += microsToAmount(row.metrics?.costMicros || 0);
+    conv.value += Number(row.metrics?.conversionsValue || 0);
+    conv.clicks += Number(row.metrics?.clicks || 0);
+  }
+
+  return Object.values(conversionMap).map((c: any) => ({
+    ...c,
+    cpa: c.conversions > 0 ? c.cost / c.conversions : 0,
+    conversionRate: c.clicks > 0 ? (c.conversions / c.clicks) * 100 : 0,
+    roas: c.cost > 0 ? c.value / c.cost : 0,
+  }));
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -606,6 +670,9 @@ serve(async (req) => {
         break;
       case "budgets":
         data = transformBudgets(results);
+        break;
+      case "conversions":
+        data = transformConversions(results);
         break;
       default:
         throw new Error(`Unknown report type: ${reportType}`);
