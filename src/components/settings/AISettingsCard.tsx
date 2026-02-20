@@ -29,7 +29,7 @@ const GEMINI_MODELS = [
   { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro (Stable)' },
 ];
 
-const DEFAULT_MODEL = 'gemini-3-flash-preview';
+const DEFAULT_MODEL = 'gemini-2.5-flash';
 
 function normalizeModel(model: string | null | undefined): string {
   const m = String(model || '').trim();

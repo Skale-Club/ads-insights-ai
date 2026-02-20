@@ -47,7 +47,7 @@ serve(async (req) => {
       `${campaignData ? JSON.stringify(campaignData, null, 2) : "No specific campaign data provided. Use general best practices."}\n\n` +
       `Format your responses in a clear, structured way. Use bullet points for lists and bold text for important metrics. REMEMBER: Short paragraphs. No giant blocks of text.`;
 
-    const geminiModel = String(model || "gemini-3-flash-preview").trim();
+    const geminiModel = String(model || "gemini-2.5-flash").trim();
     const contents = Array.isArray(messages)
       ? messages
         .filter((m: any) =>
@@ -87,7 +87,32 @@ serve(async (req) => {
           { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
       }
+      if (upstream.status === 403) {
+        return new Response(
+          JSON.stringify({
+            error:
+              "API key sem permissao para Gemini. Em Google AI Studio, habilite a Generative Language API e remova restricoes de referrer/IP incompatíveis.",
+          }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
       const errorText = await upstream.text();
+      const loweredError = errorText.toLowerCase();
+      if (loweredError.includes("api key not valid") || loweredError.includes("invalid api key")) {
+        return new Response(
+          JSON.stringify({ error: "API key invalida. Gere uma nova chave no Google AI Studio e salve novamente nas Configuracoes." }),
+          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+      if (upstream.status === 404 || loweredError.includes("model") || loweredError.includes("not found")) {
+        return new Response(
+          JSON.stringify({
+            error:
+              `Modelo "${geminiModel}" indisponivel para esta chave/projeto. Selecione um modelo estavel (ex.: gemini-2.5-flash) e tente novamente.`,
+          }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
       console.error("Gemini gateway error:", upstream.status, errorText);
       return new Response(
         JSON.stringify({ error: "Erro ao obter resposta da IA. Verifique sua API key do Gemini." }),

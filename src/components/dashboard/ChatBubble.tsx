@@ -20,7 +20,7 @@ interface UserAISettings {
 function normalizeModel(model: string | null | undefined): string {
   const m = String(model || '').trim();
   if (m.startsWith('gemini-')) return m;
-  return 'gemini-3-flash-preview';
+  return 'gemini-2.5-flash';
 }
 export type ChatCampaignContext = unknown;
 
@@ -92,6 +92,39 @@ type SearchTermRow = {
   cpa: number;
   qualityScore: number | null;
 };
+
+function buildWelcomeMessage(accountName?: string): ChatMsg {
+  if (accountName) {
+    return {
+      role: 'assistant',
+      content: `Hi. I'm your Ads Insights AI for ${accountName}. Ask about performance, budget, keywords, or optimization opportunities.`,
+    };
+  }
+
+  return {
+    role: 'assistant',
+    content: "Hi. I'm your Ads Insights AI. Select an account to start an analysis.",
+  };
+}
+
+function normalizeAssistantMarkdown(content: string): string {
+  let next = content.replace(/\r\n/g, '\n');
+
+  // Avoid excessive vertical spacing from streamed chunks.
+  next = next.replace(/\n{3,}/g, '\n\n');
+
+  // Cap indentation so nested bullets/paragraphs don't keep drifting right.
+  next = next.replace(/^\s{5,}/gm, '    ');
+
+  // If the model accidentally wraps the full answer as quote blocks,
+  // strip the quote markers to keep alignment consistent.
+  const quoteLines = (next.match(/^\s*>\s?/gm) || []).length;
+  if (quoteLines >= 3) {
+    next = next.replace(/^\s*>\s?/gm, '');
+  }
+
+  return next.trim();
+}
 
 export function ChatBubble({ campaignContext }: { campaignContext?: ChatCampaignContext }) {
   const { user } = useAuth();
@@ -272,50 +305,71 @@ export function ChatBubble({ campaignContext }: { campaignContext?: ChatCampaign
           model: normalizeModel(data.preferred_model),
         });
       });
+  }, [user?.id]);
 
-    // Load sessions logic
-    const fetchSessions = async () => {
-      const { data } = await (supabase as any)
+  useEffect(() => {
+    if (!user?.id) return;
+
+    if (!selectedAccount?.id) {
+      setSessionId(null);
+      setSessions([]);
+      setChatMessages([buildWelcomeMessage()]);
+      return;
+    }
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    let isMounted = true;
+
+    const fetchSessionsForAccount = async (): Promise<ChatSession[]> => {
+      const { data, error } = await (supabase as any)
         .from('chat_sessions')
-        .select('*')
+        .select('id, title, created_at, account_id')
         .eq('user_id', user.id)
+        .eq('account_id', selectedAccount.id)
+        .eq('archived', false)
         .order('created_at', { ascending: false });
 
-      if (data) {
-        setSessions(data as ChatSession[]);
-      }
+      if (!error && data) return data as ChatSession[];
+
+      // Backward compatibility for databases without the `archived` column.
+      const { data: fallbackData } = await (supabase as any)
+        .from('chat_sessions')
+        .select('id, title, created_at, account_id')
+        .eq('user_id', user.id)
+        .eq('account_id', selectedAccount.id)
+        .order('created_at', { ascending: false });
+      return (fallbackData || []) as ChatSession[];
     };
 
-    // Load latest chat session
+    const resetToAccountWelcome = () => {
+      setSessionId(null);
+      setChatMessages([buildWelcomeMessage(selectedAccount.name)]);
+    };
+
     const loadSession = async () => {
-      await fetchSessions();
+      const loadedSessions = await fetchSessionsForAccount();
+      if (!isMounted) return;
 
-      const { data: sessions } = await (supabase as any)
-        .from('chat_sessions')
-        .select('id')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(1);
+      setSessions(loadedSessions);
 
-      if (sessions && sessions.length > 0) {
-        const sid = sessions[0].id;
+      if (loadedSessions.length > 0) {
+        const sid = loadedSessions[0].id;
         setSessionId(sid);
         loadMessages(sid);
       } else {
-        // New chat
-        setSessionId(null);
-        setChatMessages([
-          {
-            role: 'assistant',
-            content:
-              "Hi. I'm your Ads Insights AI. I can analyze your campaigns, suggest keywords, and help optimize your budget.",
-          },
-        ]);
+        resetToAccountWelcome();
       }
     };
 
     loadSession();
-  }, [user?.id]);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user?.id, selectedAccount?.id]);
 
   const loadMessages = async (sid: string) => {
     const { data: msgs } = await (supabase as any)
@@ -368,12 +422,17 @@ export function ChatBubble({ campaignContext }: { campaignContext?: ChatCampaign
     if (abortControllerRef.current) abortControllerRef.current.abort();
 
     // Reset to welcome state first
-    setChatMessages([
-      {
-        role: 'assistant',
-        content: "Hi. I'm your Ads Insights AI. Start a new analysis context or ask a question.",
-      },
-    ]);
+    setChatMessages([buildWelcomeMessage(selectedAccount?.name)]);
+
+    if (!selectedAccount?.id) {
+      toast({
+        title: 'Select an account',
+        description: 'Choose a Google Ads account before creating a chat.',
+        variant: 'destructive',
+      });
+      setSessionId(null);
+      return;
+    }
 
     // Create a new session immediately if user is authenticated
     if (user?.id) {
@@ -382,6 +441,7 @@ export function ChatBubble({ campaignContext }: { campaignContext?: ChatCampaign
           .from('chat_sessions')
           .insert({
             user_id: user.id,
+            account_id: selectedAccount.id,
             title: 'New Chat',
           })
           .select()
@@ -425,12 +485,7 @@ export function ChatBubble({ campaignContext }: { campaignContext?: ChatCampaign
     setSessions((prev) => prev.filter((s) => s.id !== sid));
     if (sid === sessionId) {
       setSessionId(null);
-      setChatMessages([
-        {
-          role: 'assistant',
-          content: "Hi. I'm your Ads Insights AI. Start a new analysis context or ask a question.",
-        },
-      ]);
+      setChatMessages([buildWelcomeMessage(selectedAccount?.name)]);
     }
   };
 
@@ -463,12 +518,7 @@ export function ChatBubble({ campaignContext }: { campaignContext?: ChatCampaign
 
     if (sid === sessionId) {
       setSessionId(null);
-      setChatMessages([
-        {
-          role: 'assistant',
-          content: "Hi. I'm your Ads Insights AI. Start a new analysis context or ask a question.",
-        },
-      ]);
+      setChatMessages([buildWelcomeMessage(selectedAccount?.name)]);
     }
   };
 
@@ -574,9 +624,32 @@ export function ChatBubble({ campaignContext }: { campaignContext?: ChatCampaign
       }),
     });
 
-    if (resp.status === 429) throw new Error('Rate limit exceeded. Please wait and try again.');
-    if (resp.status === 402) throw new Error('AI credits exhausted. Please add credits to your workspace.');
-    if (!resp.ok || !resp.body) throw new Error('Failed to connect to AI service');
+    if (!resp.ok) {
+      let message = 'Failed to connect to AI service';
+      const contentType = resp.headers.get('content-type') || '';
+
+      if (contentType.includes('application/json')) {
+        try {
+          const payload = await resp.json();
+          if (typeof payload?.error === 'string' && payload.error.trim()) {
+            message = payload.error;
+          }
+        } catch {
+          // ignore parse errors and keep generic message
+        }
+      } else {
+        try {
+          const text = await resp.text();
+          if (text.trim()) message = text.slice(0, 300);
+        } catch {
+          // ignore read errors and keep generic message
+        }
+      }
+
+      throw new Error(message);
+    }
+
+    if (!resp.body) throw new Error('AI service returned an empty response stream.');
 
     return resp.body;
   };
@@ -585,6 +658,15 @@ export function ChatBubble({ campaignContext }: { campaignContext?: ChatCampaign
     if (!chatInput.trim()) return;
 
     console.log('handleSendMessage called. Current sessionId:', sessionId);
+
+    if (!selectedAccount?.id) {
+      toast({
+        title: 'Select an account',
+        description: 'Choose a Google Ads account before sending messages.',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     if (!aiSettings?.apiKey) {
       toast({
@@ -621,6 +703,7 @@ export function ChatBubble({ campaignContext }: { campaignContext?: ChatCampaign
           .from('chat_sessions')
           .insert({
             user_id: user?.id,
+            account_id: selectedAccount.id,
             title: initialTitle,
           })
           .select()
@@ -763,7 +846,7 @@ export function ChatBubble({ campaignContext }: { campaignContext?: ChatCampaign
 
 
   const messageList = useMemo(() => (
-    <div className="flex-1 overflow-y-auto p-3 space-y-1.5 scrollbar-thin">
+    <div className="flex-1 overflow-y-auto p-3 space-y-2.5 scrollbar-thin">
       {!canChat ? (
         <div className="rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">
           Add your Gemini API key in Settings to enable chat.
@@ -774,25 +857,24 @@ export function ChatBubble({ campaignContext }: { campaignContext?: ChatCampaign
         <div key={i} className={cn('flex', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
           <div
             className={cn(
-              'max-w-[85%] rounded-lg px-4 py-2 whitespace-pre-wrap text-sm',
-              msg.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted',
+              'max-w-[85%] rounded-2xl px-4 py-3 text-sm shadow-sm',
+              msg.role === 'user'
+                ? 'bg-primary text-primary-foreground whitespace-pre-wrap'
+                : 'bg-muted/80 border border-border/40 whitespace-normal',
             )}
           >
             {msg.role === 'assistant' ? (
               <div
                 className={cn(
-                  'prose prose-sm max-w-none',
-                  'prose-p:my-0 prose-p:leading-relaxed',
-                  'prose-ul:my-0 prose-ol:my-0',
-                  'prose-li:my-0 prose-li:leading-snug',
-                  'prose-h1:mt-2 prose-h1:mb-1',
-                  'prose-h2:mt-2 prose-h2:mb-1',
-                  'prose-h3:mt-1.5 prose-h3:mb-0.5',
-                  'prose-hr:my-1',
-                  'prose-pre:my-1.5 prose-pre:bg-background/60 prose-pre:border prose-pre:border-border prose-pre:rounded-md prose-pre:p-3',
-                  'prose-code:before:content-none prose-code:after:content-none',
-                  'prose-code:bg-background/60 prose-code:border prose-code:border-border prose-code:rounded prose-code:px-1 prose-code:py-0.5',
+                  'chat-markdown prose prose-sm max-w-none',
+                  'prose-headings:my-2 prose-headings:font-semibold',
+                  'prose-p:my-2 prose-p:leading-relaxed',
+                  'prose-ul:my-2 prose-ol:my-2',
+                  'prose-li:my-1',
+                  'prose-hr:my-3',
                   'prose-a:text-primary prose-a:no-underline hover:prose-a:underline',
+                  'prose-strong:text-foreground',
+                  'prose-table:my-3',
                 )}
               >
                 <ReactMarkdown
@@ -801,9 +883,17 @@ export function ChatBubble({ campaignContext }: { campaignContext?: ChatCampaign
                     a: ({ node, ...props }) => (
                       <a {...props} target="_blank" rel="noopener noreferrer" />
                     ),
+                    blockquote: ({ node, ...props }) => (
+                      <blockquote className="my-2 border-l-2 border-border/70 pl-3 text-foreground/90" {...props} />
+                    ),
+                    table: ({ node, ...props }) => (
+                      <div className="overflow-x-auto">
+                        <table {...props} />
+                      </div>
+                    ),
                   }}
                 >
-                  {msg.content}
+                  {normalizeAssistantMarkdown(msg.content)}
                 </ReactMarkdown>
               </div>
             ) : (

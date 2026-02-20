@@ -79,6 +79,7 @@ export default function SearchTermsPage() {
   const activeSuggestions = suggestedNegatives.filter(
     (s) => !dismissedSuggestions.includes(s.key)
   );
+  const hasRightPanel = activeSuggestions.length > 0;
 
   const token = providerToken || sessionStorage.getItem('google_provider_token');
 
@@ -352,7 +353,12 @@ export default function SearchTermsPage() {
         </p>
       </div>
 
-      <div className="grid gap-6 2xl:grid-cols-[minmax(0,1fr)_420px] 2xl:items-start">
+      <div
+        className={cn(
+          'grid gap-6',
+          hasRightPanel ? '2xl:grid-cols-[minmax(0,1fr)_420px] 2xl:items-start' : 'grid-cols-1'
+        )}
+      >
         {/* Search Terms Table */}
         <div className="space-y-6">
           <DataTable
@@ -365,7 +371,7 @@ export default function SearchTermsPage() {
         </div>
 
         {/* AI Negative Keyword Suggestions */}
-        {activeSuggestions.length > 0 ? (
+        {hasRightPanel ? (
           <Card className="border-primary/20 bg-primary/5 2xl:sticky 2xl:top-20">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between gap-3">

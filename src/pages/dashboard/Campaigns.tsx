@@ -42,10 +42,15 @@ export default function CampaignsPage() {
   const { providerToken } = useAuth();
   const { data: campaigns, isLoading } = useGoogleAdsReport<Campaign[]>('campaigns');
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [showInactive, setShowInactive] = useState(false);
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
   const campaignData = campaigns || [];
+  const filteredCampaignData = useMemo(
+    () => (showInactive ? campaignData : campaignData.filter((campaign) => campaign.status === 'enabled')),
+    [campaignData, showInactive]
+  );
 
   const handleToggleStatus = async (campaign: Campaign) => {
     const token = providerToken || sessionStorage.getItem('google_provider_token');
@@ -296,7 +301,7 @@ export default function CampaignsPage() {
   const handleExport = () => {
     const csv = [
       ['Campaign', 'Status', 'Type', 'Budget', 'Spend', 'Impressions', 'Clicks', 'CTR', 'Conversions', 'CPA', 'ROAS'],
-      ...campaignData.map((c) => [
+      ...filteredCampaignData.map((c) => [
         c.name,
         c.status,
         c.type,
@@ -317,7 +322,7 @@ export default function CampaignsPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'campaigns.csv';
+    a.download = showInactive ? 'campaigns-all.csv' : 'campaigns-active.csv';
     a.click();
   };
 
@@ -349,9 +354,27 @@ export default function CampaignsPage() {
         </p>
       </div>
 
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm text-muted-foreground">Status filter:</span>
+        <Button
+          size="sm"
+          variant={showInactive ? 'outline' : 'default'}
+          onClick={() => setShowInactive(false)}
+        >
+          Active only
+        </Button>
+        <Button
+          size="sm"
+          variant={showInactive ? 'default' : 'outline'}
+          onClick={() => setShowInactive(true)}
+        >
+          Include inactive
+        </Button>
+      </div>
+
       <DataTable
         columns={columns}
-        data={campaignData}
+        data={filteredCampaignData}
         searchColumn="name"
         searchPlaceholder="Search campaigns..."
         onExport={handleExport}
