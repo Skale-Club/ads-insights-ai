@@ -1,10 +1,17 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { type ColumnDef } from '@tanstack/react-table';
-import { ArrowUpDown, Loader2 } from 'lucide-react';
+import { ArrowUpDown, Loader2, Filter } from 'lucide-react';
 import { DataTable } from '@/components/dashboard/DataTable';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useDashboard } from '@/contexts/DashboardContext';
 import { useGoogleAdsReport } from '@/hooks/useGoogleAdsReport';
 import { cn } from '@/lib/utils';
@@ -36,14 +43,26 @@ const formatNumber = (value: number) =>
 export default function AdGroupsPage() {
   const { selectedAccount } = useDashboard();
   const { data, isLoading } = useGoogleAdsReport<AdGroup[]>('adGroups');
+  const [selectedCampaign, setSelectedCampaign] = useState<string>('all');
+  
   const adGroupData = (data as AdGroup[] | undefined) || [];
 
-  const stats = useMemo(() => {
-    const totalCost = adGroupData.reduce((sum, ag) => sum + ag.cost, 0);
-    const totalConversions = adGroupData.reduce((sum, ag) => sum + ag.conversions, 0);
-    const activeCount = adGroupData.filter(ag => ag.status === 'enabled').length;
-    return { totalCost, totalConversions, activeCount, total: adGroupData.length };
+  const campaigns = useMemo(() => {
+    const uniqueCampaigns = [...new Set(adGroupData.map(ag => ag.campaignName))].filter(Boolean).sort();
+    return uniqueCampaigns;
   }, [adGroupData]);
+
+  const filteredData = useMemo(() => {
+    if (selectedCampaign === 'all') return adGroupData;
+    return adGroupData.filter(ag => ag.campaignName === selectedCampaign);
+  }, [adGroupData, selectedCampaign]);
+
+  const stats = useMemo(() => {
+    const totalCost = filteredData.reduce((sum, ag) => sum + ag.cost, 0);
+    const totalConversions = filteredData.reduce((sum, ag) => sum + ag.conversions, 0);
+    const activeCount = filteredData.filter(ag => ag.status === 'enabled').length;
+    return { totalCost, totalConversions, activeCount, total: filteredData.length };
+  }, [filteredData]);
 
   const columns: ColumnDef<AdGroup>[] = useMemo(
     () => [
@@ -196,11 +215,34 @@ export default function AdGroupsPage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Ad Groups</h1>
-        <p className="text-muted-foreground">
-          Manage and analyze ad group performance across your campaigns
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Ad Groups</h1>
+          <p className="text-muted-foreground">
+            Manage and analyze ad group performance across your campaigns
+          </p>
+        </div>
+        {campaigns.length > 0 && (
+          <div className="flex items-center gap-2">
+            <Filter className="h-4 w-4 text-muted-foreground" />
+            <Select value={selectedCampaign} onValueChange={setSelectedCampaign}>
+              <SelectTrigger className="w-[250px]">
+                <SelectValue placeholder="Filter by campaign" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Campaigns ({adGroupData.length})</SelectItem>
+                {campaigns.map((campaign) => {
+                  const count = adGroupData.filter(ag => ag.campaignName === campaign).length;
+                  return (
+                    <SelectItem key={campaign} value={campaign}>
+                      {campaign} ({count})
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
 
       <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
@@ -233,7 +275,7 @@ export default function AdGroupsPage() {
 
       <DataTable
         columns={columns}
-        data={adGroupData}
+        data={filteredData}
         searchColumn="name"
         searchPlaceholder="Search ad groups..."
       />
