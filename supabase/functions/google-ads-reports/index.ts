@@ -643,6 +643,8 @@ async function fetchNegativeKeywordsBothLevels(
       AND campaign_criterion.status != 'REMOVED'
   `;
 
+  console.log(`[google-ads-reports] Fetching negative keywords for customer ${cleanCustomerId}`);
+
   const adGroupResponse = await fetch(
     `https://googleads.googleapis.com/${API_VERSION}/customers/${cleanCustomerId}/googleAds:searchStream`,
     {
@@ -667,11 +669,19 @@ async function fetchNegativeKeywordsBothLevels(
   if (adGroupResponse.ok) {
     const data = await adGroupResponse.json();
     adGroupResults = data.reduce((acc: any[], batch: any) => acc.concat(batch.results || []), []);
+    console.log(`[google-ads-reports] Ad group negative keywords: ${adGroupResults.length}`);
+  } else {
+    const errorText = await adGroupResponse.text();
+    console.error(`[google-ads-reports] Ad group query failed (${adGroupResponse.status}):`, errorText);
   }
 
   if (campaignResponse.ok) {
     const data = await campaignResponse.json();
     campaignResults = data.reduce((acc: any[], batch: any) => acc.concat(batch.results || []), []);
+    console.log(`[google-ads-reports] Campaign negative keywords: ${campaignResults.length}`);
+  } else {
+    const errorText = await campaignResponse.text();
+    console.error(`[google-ads-reports] Campaign query failed (${campaignResponse.status}):`, errorText);
   }
 
   const adGroupNegatives = adGroupResults.map((row) => {
@@ -709,6 +719,128 @@ async function fetchNegativeKeywordsBothLevels(
   console.log(`[google-ads-reports] negativeKeywords: ${adGroupNegatives.length} ad group level, ${campaignNegatives.length} campaign level`);
 
   return [...adGroupNegatives, ...campaignNegatives];
+}
+
+async function fetchNegativeKeywordsWithErrorDetails(
+  cleanCustomerId: string,
+  headers: Record<string, string>
+): Promise<{ data: any[]; errors: string[] }> {
+  const errors: string[] = [];
+
+  const adGroupQuery = `
+    SELECT
+      ad_group_criterion.criterion_id,
+      ad_group_criterion.keyword.text,
+      ad_group_criterion.keyword.match_type,
+      ad_group_criterion.status,
+      ad_group.name,
+      campaign.name
+    FROM ad_group_criterion
+    WHERE ad_group_criterion.type = 'NEGATIVE_KEYWORD'
+      AND ad_group_criterion.status != 'REMOVED'
+  `;
+
+  const campaignQuery = `
+    SELECT
+      campaign_criterion.criterion_id,
+      campaign_criterion.keyword.text,
+      campaign_criterion.keyword.match_type,
+      campaign_criterion.status,
+      campaign.name
+    FROM campaign_criterion
+    WHERE campaign_criterion.type = 'NEGATIVE_KEYWORD'
+      AND campaign_criterion.status != 'REMOVED'
+  `;
+
+  console.log(`[google-ads-reports] Fetching negative keywords for customer ${cleanCustomerId}`);
+
+  let adGroupResults: any[] = [];
+  let campaignResults: any[] = [];
+
+  try {
+    const adGroupResponse = await fetch(
+      `https://googleads.googleapis.com/${API_VERSION}/customers/${cleanCustomerId}/googleAds:searchStream`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ query: adGroupQuery }),
+      }
+    );
+
+    if (adGroupResponse.ok) {
+      const data = await adGroupResponse.json();
+      adGroupResults = data.reduce((acc: any[], batch: any) => acc.concat(batch.results || []), []);
+      console.log(`[google-ads-reports] Ad group negative keywords: ${adGroupResults.length}`);
+    } else {
+      const errorText = await adGroupResponse.text();
+      errors.push(`Ad group query failed (${adGroupResponse.status}): ${errorText}`);
+      console.error(`[google-ads-reports] Ad group query failed:`, errorText);
+    }
+  } catch (e) {
+    errors.push(`Ad group query error: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  try {
+    const campaignResponse = await fetch(
+      `https://googleads.googleapis.com/${API_VERSION}/customers/${cleanCustomerId}/googleAds:searchStream`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ query: campaignQuery }),
+      }
+    );
+
+    if (campaignResponse.ok) {
+      const data = await campaignResponse.json();
+      campaignResults = data.reduce((acc: any[], batch: any) => acc.concat(batch.results || []), []);
+      console.log(`[google-ads-reports] Campaign negative keywords: ${campaignResults.length}`);
+    } else {
+      const errorText = await campaignResponse.text();
+      errors.push(`Campaign query failed (${campaignResponse.status}): ${errorText}`);
+      console.error(`[google-ads-reports] Campaign query failed:`, errorText);
+    }
+  } catch (e) {
+    errors.push(`Campaign query error: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  const adGroupNegatives = adGroupResults.map((row) => {
+    const id = row.adGroupCriterion?.criterionId;
+    const matchType = (row.adGroupCriterion?.keyword?.matchType || "").toLowerCase();
+    const status = (row.adGroupCriterion?.status || "").toLowerCase();
+
+    return {
+      id: String(id),
+      keyword: row.adGroupCriterion?.keyword?.text || "",
+      matchType: matchType === "exact" ? "exact" : matchType === "phrase" ? "phrase" : "broad",
+      status: status === "enabled" ? "enabled" : "paused",
+      adGroup: row.adGroup?.name || "",
+      campaign: row.campaign?.name || "",
+      level: "ad_group",
+    };
+  });
+
+  const campaignNegatives = campaignResults.map((row) => {
+    const id = row.campaignCriterion?.criterionId;
+    const matchType = (row.campaignCriterion?.keyword?.matchType || "").toLowerCase();
+    const status = (row.campaignCriterion?.status || "").toLowerCase();
+
+    return {
+      id: `campaign-${id}`,
+      keyword: row.campaignCriterion?.keyword?.text || "",
+      matchType: matchType === "exact" ? "exact" : matchType === "phrase" ? "phrase" : "broad",
+      status: status === "enabled" ? "enabled" : "paused",
+      adGroup: "",
+      campaign: row.campaign?.name || "",
+      level: "campaign",
+    };
+  });
+
+  console.log(`[google-ads-reports] negativeKeywords: ${adGroupNegatives.length} ad group level, ${campaignNegatives.length} campaign level`);
+
+  return { 
+    data: [...adGroupNegatives, ...campaignNegatives], 
+    errors 
+  };
 }
 
 serve(async (req) => {
@@ -804,7 +936,11 @@ serve(async (req) => {
         data = transformConversions(results);
         break;
       case "negativeKeywords":
-        data = await fetchNegativeKeywordsBothLevels(cleanCustomerId, headers);
+        const negResult = await fetchNegativeKeywordsWithErrorDetails(cleanCustomerId, headers);
+        data = negResult.data;
+        if (negResult.errors.length > 0) {
+          console.error("[google-ads-reports] Negative keywords errors:", negResult.errors);
+        }
         break;
       default:
         throw new Error(`Unknown report type: ${reportType}`);

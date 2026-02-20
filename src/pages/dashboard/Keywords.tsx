@@ -35,11 +35,15 @@ const formatNumber = (value: number) =>
 export default function KeywordsPage() {
   const { selectedAccount } = useDashboard();
   const { data: keywords, isLoading } = useGoogleAdsReport<Keyword[]>('keywords');
-  const { data: negativeKeywordsData, isLoading: isLoadingNegative } = useGoogleAdsReport<NegativeKeyword[]>('negativeKeywords');
+  const { data: negativeKeywordsData, isLoading: isLoadingNegative, error: negativeError } = useGoogleAdsReport<NegativeKeyword[]>('negativeKeywords');
   const [activeTab, setActiveTab] = useState('positive');
 
   const keywordData = (keywords as Keyword[] | undefined) || [];
   const negativeKeywordData = (negativeKeywordsData as NegativeKeyword[] | undefined) || [];
+  
+  console.log('Keywords data:', keywordData.length, 'keywords');
+  console.log('Negative keywords data:', negativeKeywordData, negativeKeywordsData);
+  console.log('Negative keywords error:', negativeError);
 
   const bestKeywords = useMemo(
     () =>
