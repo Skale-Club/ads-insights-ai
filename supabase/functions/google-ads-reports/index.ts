@@ -165,10 +165,14 @@ function buildQuery(reportType: ReportType, startDate: string, endDate: string):
           conversion_action.name,
           conversion_action.category,
           conversion_action.status,
+          conversion_action.type,
+          conversion_action.counting_type,
+          conversion_action.primary_for_goal,
           metrics.cost_micros,
           metrics.conversions,
           metrics.conversions_value,
-          metrics.clicks
+          metrics.clicks,
+          metrics.all_conversions
         FROM conversion_action
         WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
       `;
@@ -557,6 +561,35 @@ function transformBudgets(results: any[]) {
 function transformConversions(results: any[]) {
   const conversionMap: Record<string, any> = {};
 
+  const categoryMap: Record<string, string> = {
+    "purchase": "Purchase",
+    "lead": "Lead",
+    "sign_up": "Sign Up",
+    "add_to_cart": "Add to Cart",
+    "begin_checkout": "Begin Checkout",
+    "subscribe": "Subscribe",
+    "download": "Download",
+    "page_view": "Page View",
+    "other": "Other",
+  };
+
+  const typeMap: Record<string, string> = {
+    "webpage_on_click": "Website",
+    "webpage": "Website",
+    "app_install": "App Install",
+    "app_in_app_action": "App Action",
+    "phone_call": "Phone Call",
+    "import": "Import",
+    "analytics": "Analytics",
+    "website": "Website",
+  };
+
+  const countingMap: Record<string, string> = {
+    "one_per_click": "One per click",
+    "many_per_click": "Every conversion",
+    "one_per_conversion": "One per conversion",
+  };
+
   for (const row of results) {
     const id = row.conversionAction?.id;
     if (!id) continue;
@@ -564,24 +597,20 @@ function transformConversions(results: any[]) {
     if (!conversionMap[id]) {
       const status = (row.conversionAction?.status || "enabled").toLowerCase();
       const category = (row.conversionAction?.category || "other").toLowerCase();
-      const categoryMap: Record<string, string> = {
-        "purchase": "Purchase",
-        "lead": "Lead",
-        "sign_up": "Sign Up",
-        "add_to_cart": "Add to Cart",
-        "begin_checkout": "Begin Checkout",
-        "subscribe": "Subscribe",
-        "download": "Download",
-        "page_view": "Page View",
-        "other": "Other",
-      };
+      const type = (row.conversionAction?.type || "").toLowerCase();
+      const countingType = (row.conversionAction?.countingType || "").toLowerCase();
+      const primaryForGoal = row.conversionAction?.primaryForGoal ?? true;
 
       conversionMap[id] = {
         id: String(id),
         name: row.conversionAction?.name || `Conversion ${id}`,
         category: categoryMap[category] || category.replace(/_/g, " "),
+        type: typeMap[type] || type.replace(/_/g, " "),
+        countingType: countingMap[countingType] || countingType.replace(/_/g, " "),
         status: status === "enabled" ? "enabled" : "paused",
+        primaryForGoal: primaryForGoal,
         conversions: 0,
+        allConversions: 0,
         cost: 0,
         value: 0,
         clicks: 0,
@@ -590,6 +619,7 @@ function transformConversions(results: any[]) {
 
     const conv = conversionMap[id];
     conv.conversions += Number(row.metrics?.conversions || 0);
+    conv.allConversions += Number(row.metrics?.allConversions || 0);
     conv.cost += microsToAmount(row.metrics?.costMicros || 0);
     conv.value += Number(row.metrics?.conversionsValue || 0);
     conv.clicks += Number(row.metrics?.clicks || 0);
@@ -600,6 +630,7 @@ function transformConversions(results: any[]) {
     cpa: c.conversions > 0 ? c.cost / c.conversions : 0,
     conversionRate: c.clicks > 0 ? (c.conversions / c.clicks) * 100 : 0,
     roas: c.cost > 0 ? c.value / c.cost : 0,
+    hasConversions: c.conversions > 0 || c.allConversions > 0,
   }));
 }
 
