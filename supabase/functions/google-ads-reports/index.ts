@@ -106,6 +106,24 @@ function buildQuery(reportType: ReportType, startDate: string, endDate: string):
           AND ad_group.status != 'REMOVED'
       `;
 
+    case "ads":
+      return `
+        SELECT
+          ad_group_ad.ad.id,
+          ad_group_ad.ad.name,
+          ad_group_ad.status,
+          ad_group_ad.ad.type,
+          ad_group.name,
+          campaign.name,
+          metrics.cost_micros,
+          metrics.impressions,
+          metrics.clicks,
+          metrics.conversions
+        FROM ad_group_ad
+        WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+          AND ad_group_ad.status != 'REMOVED'
+      `;
+
     default:
       throw new Error(`Unknown report type: ${reportType}`);
   }
@@ -333,6 +351,57 @@ function transformAdGroups(results: any[]) {
   }));
 }
 
+function transformAds(results: any[]) {
+  const adMap: Record<string, any> = {};
+
+  for (const row of results) {
+    const id = row.adGroupAd?.ad?.id;
+    if (!id) continue;
+
+    if (!adMap[id]) {
+      const status = (row.adGroupAd?.status || "").toLowerCase();
+      const adType = (row.adGroupAd?.ad?.type || "").toLowerCase();
+      const typeMap: Record<string, string> = {
+        "responsive_search_ad": "Responsive Search",
+        "expanded_text_ad": "Expanded Text",
+        "text_ad": "Text",
+        "responsive_display_ad": "Responsive Display",
+        "image_ad": "Image",
+        "video_ad": "Video",
+        "shopping_smart_ad": "Smart Shopping",
+        "shopping_product_ad": "Shopping",
+        "performance_max_ad": "Performance Max",
+        "app_ad": "App",
+        "call_ad": "Call",
+      };
+
+      adMap[id] = {
+        id: String(id),
+        name: row.adGroupAd?.ad?.name || `Ad ${id}`,
+        adGroup: row.adGroup?.name || "",
+        campaign: row.campaign?.name || "",
+        type: typeMap[adType] || adType.replace(/_/g, " "),
+        status: status === "enabled" ? "enabled" : "paused",
+        impressions: 0,
+        clicks: 0,
+        cost: 0,
+        conversions: 0,
+      };
+    }
+
+    const ad = adMap[id];
+    ad.impressions += Number(row.metrics?.impressions || 0);
+    ad.clicks += Number(row.metrics?.clicks || 0);
+    ad.cost += microsToAmount(row.metrics?.costMicros || 0);
+    ad.conversions += Number(row.metrics?.conversions || 0);
+  }
+
+  return Object.values(adMap).map((ad: any) => ({
+    ...ad,
+    ctr: ad.impressions > 0 ? (ad.clicks / ad.impressions) * 100 : 0,
+  }));
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -412,6 +481,9 @@ serve(async (req) => {
         break;
       case "adGroups":
         data = transformAdGroups(results);
+        break;
+      case "ads":
+        data = transformAds(results);
         break;
       default:
         throw new Error(`Unknown report type: ${reportType}`);
