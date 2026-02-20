@@ -124,6 +124,24 @@ function buildQuery(reportType: ReportType, startDate: string, endDate: string):
           AND ad_group_ad.status != 'REMOVED'
       `;
 
+    case "audiences":
+      return `
+        SELECT
+          audience.id,
+          audience.name,
+          audience.type,
+          ad_group_criterion.status,
+          metrics.cost_micros,
+          metrics.impressions,
+          metrics.clicks,
+          metrics.conversions,
+          segments.audience_asset_group.audience_asset_group,
+          ad_group_criterion.user_interest.user_interest_category,
+          ad_group_criterion.user_list.user_list
+        FROM audience_view
+        WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+      `;
+
     default:
       throw new Error(`Unknown report type: ${reportType}`);
   }
@@ -402,6 +420,58 @@ function transformAds(results: any[]) {
   }));
 }
 
+function transformAudiences(results: any[]) {
+  const audienceMap: Record<string, any> = {};
+
+  for (const row of results) {
+    const id = row.audience?.id || row.adGroupCriterion?.criterionId;
+    if (!id) continue;
+
+    const key = String(id);
+    if (!audienceMap[key]) {
+      const status = (row.adGroupCriterion?.status || "enabled").toLowerCase();
+      const audienceType = (row.audience?.type || "").toLowerCase();
+      const typeMap: Record<string, string> = {
+        "user_interest": "Interest",
+        "user_list": "Remarketing",
+        "custom_audience": "Custom",
+        "lookalike": "Lookalike",
+        "detailed_demographic": "Demographic",
+        "life_event": "Life Event",
+      };
+
+      const name = row.audience?.name || 
+                   row.adGroupCriterion?.userInterest?.userInterestCategory || 
+                   row.adGroupCriterion?.userList?.userList || 
+                   `Audience ${id}`;
+
+      audienceMap[key] = {
+        id: key,
+        name: name,
+        type: typeMap[audienceType] || audienceType.replace(/_/g, " "),
+        status: status === "enabled" ? "enabled" : "paused",
+        reach: 0,
+        impressions: 0,
+        clicks: 0,
+        cost: 0,
+        conversions: 0,
+      };
+    }
+
+    const aud = audienceMap[key];
+    aud.impressions += Number(row.metrics?.impressions || 0);
+    aud.clicks += Number(row.metrics?.clicks || 0);
+    aud.cost += microsToAmount(row.metrics?.costMicros || 0);
+    aud.conversions += Number(row.metrics?.conversions || 0);
+  }
+
+  return Object.values(audienceMap).map((aud: any) => ({
+    ...aud,
+    ctr: aud.impressions > 0 ? (aud.clicks / aud.impressions) * 100 : 0,
+    cpa: aud.conversions > 0 ? aud.cost / aud.conversions : 0,
+  }));
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -484,6 +554,9 @@ serve(async (req) => {
         break;
       case "ads":
         data = transformAds(results);
+        break;
+      case "audiences":
+        data = transformAudiences(results);
         break;
       default:
         throw new Error(`Unknown report type: ${reportType}`);
