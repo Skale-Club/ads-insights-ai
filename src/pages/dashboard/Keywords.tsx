@@ -19,6 +19,7 @@ interface NegativeKeyword {
   status: string;
   adGroup: string;
   campaign: string;
+  level: string;
 }
 
 const formatCurrency = (value: number) =>
@@ -72,13 +73,18 @@ export default function KeywordsPage() {
 
   const negativeStats = useMemo(() => {
     const byMatchType = { exact: 0, phrase: 0, broad: 0 };
+    const byLevel = { campaign: 0, ad_group: 0 };
     negativeKeywordData.forEach((k) => {
       const mt = k.matchType as keyof typeof byMatchType;
       if (byMatchType[mt] !== undefined) {
         byMatchType[mt]++;
       }
+      const level = k.level as keyof typeof byLevel;
+      if (byLevel[level] !== undefined) {
+        byLevel[level]++;
+      }
     });
-    return { total: negativeKeywordData.length, byMatchType };
+    return { total: negativeKeywordData.length, byMatchType, byLevel };
   }, [negativeKeywordData]);
 
   const columns: ColumnDef<Keyword>[] = useMemo(
@@ -345,6 +351,33 @@ export default function KeywordsPage() {
         },
       },
       {
+        accessorKey: 'level',
+        header: ({ column }) => (
+          <div className="text-center">
+            <Button
+              variant="ghost"
+              onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+            >
+              Level
+              <ArrowUpDown className="ml-2 h-4 w-4" />
+            </Button>
+          </div>
+        ),
+        cell: ({ row }) => {
+          const level = row.getValue('level') as string;
+          return (
+            <div className="text-center">
+              <Badge 
+                variant={level === 'campaign' ? 'default' : 'secondary'}
+                className="capitalize"
+              >
+                {level === 'campaign' ? 'Campaign' : 'Ad Group'}
+              </Badge>
+            </div>
+          );
+        },
+      },
+      {
         accessorKey: 'campaign',
         header: ({ column }) => (
           <Button
@@ -547,6 +580,22 @@ export default function KeywordsPage() {
               </CardHeader>
               <CardContent>
                 <p className="text-2xl font-bold">{negativeStats.total}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Campaign Level</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-bold">{negativeStats.byLevel.campaign}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Ad Group Level</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-bold">{negativeStats.byLevel.ad_group}</p>
               </CardContent>
             </Card>
             <Card>
