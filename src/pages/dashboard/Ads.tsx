@@ -1,10 +1,17 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { type ColumnDef } from '@tanstack/react-table';
-import { ArrowUpDown, Loader2 } from 'lucide-react';
+import { ArrowUpDown, Loader2, Filter } from 'lucide-react';
 import { DataTable } from '@/components/dashboard/DataTable';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useDashboard } from '@/contexts/DashboardContext';
 import { useGoogleAdsReport } from '@/hooks/useGoogleAdsReport';
 import { cn } from '@/lib/utils';
@@ -36,15 +43,47 @@ const formatNumber = (value: number) =>
 export default function AdsPage() {
   const { selectedAccount } = useDashboard();
   const { data, isLoading } = useGoogleAdsReport<Ad[]>('ads');
+  const [selectedCampaign, setSelectedCampaign] = useState<string>('all');
+  const [selectedAdGroup, setSelectedAdGroup] = useState<string>('all');
+
   const adData = (data as Ad[] | undefined) || [];
 
-  const stats = useMemo(() => {
-    const totalCost = adData.reduce((sum, ad) => sum + ad.cost, 0);
-    const totalClicks = adData.reduce((sum, ad) => sum + ad.clicks, 0);
-    const totalConversions = adData.reduce((sum, ad) => sum + ad.conversions, 0);
-    const avgCtr = adData.length > 0 ? adData.reduce((sum, ad) => sum + ad.ctr, 0) / adData.length : 0;
-    return { totalCost, totalClicks, totalConversions, avgCtr, total: adData.length };
+  const campaigns = useMemo(() => {
+    const uniqueCampaigns = [...new Set(adData.map(ad => ad.campaign))].filter(Boolean).sort();
+    return uniqueCampaigns;
   }, [adData]);
+
+  const adGroups = useMemo(() => {
+    const filtered = selectedCampaign === 'all' 
+      ? adData 
+      : adData.filter(ad => ad.campaign === selectedCampaign);
+    const uniqueAdGroups = [...new Set(filtered.map(ad => ad.adGroup))].filter(Boolean).sort();
+    return uniqueAdGroups;
+  }, [adData, selectedCampaign]);
+
+  const filteredData = useMemo(() => {
+    let filtered = adData;
+    if (selectedCampaign !== 'all') {
+      filtered = filtered.filter(ad => ad.campaign === selectedCampaign);
+    }
+    if (selectedAdGroup !== 'all') {
+      filtered = filtered.filter(ad => ad.adGroup === selectedAdGroup);
+    }
+    return filtered;
+  }, [adData, selectedCampaign, selectedAdGroup]);
+
+  const stats = useMemo(() => {
+    const totalCost = filteredData.reduce((sum, ad) => sum + ad.cost, 0);
+    const totalClicks = filteredData.reduce((sum, ad) => sum + ad.clicks, 0);
+    const totalConversions = filteredData.reduce((sum, ad) => sum + ad.conversions, 0);
+    const avgCtr = filteredData.length > 0 ? filteredData.reduce((sum, ad) => sum + ad.ctr, 0) / filteredData.length : 0;
+    return { totalCost, totalClicks, totalConversions, avgCtr, total: filteredData.length };
+  }, [filteredData]);
+
+  const handleCampaignChange = (value: string) => {
+    setSelectedCampaign(value);
+    setSelectedAdGroup('all');
+  };
 
   const columns: ColumnDef<Ad>[] = useMemo(
     () => [
@@ -202,6 +241,45 @@ export default function AdsPage() {
         </p>
       </div>
 
+      <div className="flex flex-wrap items-center gap-3">
+        {campaigns.length > 0 && (
+          <div className="flex items-center gap-2">
+            <Filter className="h-4 w-4 text-muted-foreground" />
+            <Select value={selectedCampaign} onValueChange={handleCampaignChange}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="Filter by campaign" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Campaigns ({adData.length})</SelectItem>
+                {campaigns.map((campaign) => {
+                  const count = adData.filter(ad => ad.campaign === campaign).length;
+                  return (
+                    <SelectItem key={campaign} value={campaign}>
+                      {campaign} ({count})
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+        {adGroups.length > 0 && (
+          <Select value={selectedAdGroup} onValueChange={setSelectedAdGroup}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="Filter by ad group" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Ad Groups</SelectItem>
+              {adGroups.map((adGroup) => (
+                <SelectItem key={adGroup} value={adGroup}>
+                  {adGroup}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+      </div>
+
       <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
         <Card>
           <CardHeader className="pb-2">
@@ -239,7 +317,7 @@ export default function AdsPage() {
 
       <DataTable
         columns={columns}
-        data={adData}
+        data={filteredData}
         searchColumn="name"
         searchPlaceholder="Search ads..."
       />

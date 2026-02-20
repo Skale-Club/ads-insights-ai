@@ -9,6 +9,8 @@ export interface Keyword {
   keyword: string;
   matchType: 'exact' | 'phrase' | 'broad';
   status: 'enabled' | 'paused' | 'removed';
+  adGroup?: string;
+  campaign?: string;
   impressions: number;
   clicks: number;
   ctr: number;

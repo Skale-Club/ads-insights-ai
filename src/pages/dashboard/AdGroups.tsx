@@ -222,11 +222,14 @@ export default function AdGroupsPage() {
             Manage and analyze ad group performance across your campaigns
           </p>
         </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3">
         {campaigns.length > 0 && (
           <div className="flex items-center gap-2">
             <Filter className="h-4 w-4 text-muted-foreground" />
             <Select value={selectedCampaign} onValueChange={setSelectedCampaign}>
-              <SelectTrigger className="w-[250px]">
+              <SelectTrigger className="w-[220px]">
                 <SelectValue placeholder="Filter by campaign" />
               </SelectTrigger>
               <SelectContent>

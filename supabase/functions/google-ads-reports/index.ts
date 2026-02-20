@@ -63,6 +63,8 @@ function buildQuery(reportType: ReportType, startDate: string, endDate: string):
           ad_group_criterion.keyword.match_type,
           ad_group_criterion.status,
           ad_group_criterion.quality_info.quality_score,
+          ad_group.name,
+          campaign.name,
           metrics.cost_micros,
           metrics.impressions,
           metrics.clicks,
@@ -81,6 +83,8 @@ function buildQuery(reportType: ReportType, startDate: string, endDate: string):
           search_term_view.ad_group,
           segments.keyword.info.text,
           segments.keyword.info.match_type,
+          ad_group.name,
+          campaign.name,
           metrics.cost_micros,
           metrics.impressions,
           metrics.clicks,
@@ -306,6 +310,8 @@ function transformKeywords(results: any[]) {
         keyword: row.adGroupCriterion?.keyword?.text || `Keyword ${id}`,
         matchType: matchType === "exact" ? "exact" : matchType === "phrase" ? "phrase" : "broad",
         status: status === "enabled" ? "enabled" : "paused",
+        adGroup: row.adGroup?.name || "",
+        campaign: row.campaign?.name || "",
         qualityScore: row.adGroupCriterion?.qualityInfo?.qualityScore || null,
         searchImpressionShare: null,
         impressions: 0,
@@ -322,7 +328,6 @@ function transformKeywords(results: any[]) {
     k.cost += microsToAmount(row.metrics?.costMicros || 0);
     k.conversions += Number(row.metrics?.conversions || 0);
 
-    // Search impression share (take last non-null value)
     if (row.metrics?.searchImpressionShare) {
       k.searchImpressionShare = Number(row.metrics.searchImpressionShare) * 100;
     }
@@ -351,6 +356,8 @@ function transformSearchTerms(results: any[]) {
         searchTerm: term,
         matchedKeyword: row.segments?.keyword?.info?.text || "",
         matchType: (row.segments?.keyword?.info?.matchType || "").toLowerCase(),
+        adGroup: row.adGroup?.name || "",
+        campaign: row.campaign?.name || "",
         impressions: 0,
         clicks: 0,
         cost: 0,

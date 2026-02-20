@@ -1,10 +1,17 @@
 import { useMemo, useState } from 'react';
 import { type ColumnDef } from '@tanstack/react-table';
-import { ArrowUpDown, Plus, X, Sparkles, Loader2, Check } from 'lucide-react';
+import { ArrowUpDown, Plus, X, Sparkles, Loader2, Check, Filter } from 'lucide-react';
 import { DataTable } from '@/components/dashboard/DataTable';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useDashboard } from '@/contexts/DashboardContext';
 import { useGoogleAdsReport } from '@/hooks/useGoogleAdsReport';
 import { useAuth } from '@/contexts/AuthContext';
@@ -18,6 +25,8 @@ interface SearchTerm {
   searchTerm: string;
   matchedKeyword: string;
   matchType: string;
+  adGroup?: string;
+  campaign?: string;
   impressions: number;
   clicks: number;
   ctr: number;
@@ -40,17 +49,46 @@ export default function SearchTermsPage() {
   const { selectedAccount } = useDashboard();
   const { providerToken } = useAuth();
   const { toast } = useToast();
-  const { data: searchTerms, isLoading } = useGoogleAdsReport<SearchTerm[]>('search_terms');
+  const { data, isLoading } = useGoogleAdsReport<SearchTerm[]>('search_terms');
   const [dismissedSuggestions, setDismissedSuggestions] = useState<string[]>([]);
   const [adding, setAdding] = useState<Record<string, boolean>>({});
   const [added, setAdded] = useState<Record<string, boolean>>({});
+  const [selectedCampaign, setSelectedCampaign] = useState<string>('all');
+  const [selectedAdGroup, setSelectedAdGroup] = useState<string>('all');
 
-  const searchTermData = searchTerms || [];
+  const searchTermData = (data as SearchTerm[] | undefined) || [];
 
-  // Derive negative keyword suggestions from search terms with 0 conversions and high cost
+  const campaigns = useMemo(() => {
+    const uniqueCampaigns = [...new Set(searchTermData.map(t => t.campaign).filter(Boolean))].sort();
+    return uniqueCampaigns;
+  }, [searchTermData]);
+
+  const adGroups = useMemo(() => {
+    const filtered = selectedCampaign === 'all' 
+      ? searchTermData 
+      : searchTermData.filter(t => t.campaign === selectedCampaign);
+    const uniqueAdGroups = [...new Set(filtered.map(t => t.adGroup).filter(Boolean))].sort();
+    return uniqueAdGroups;
+  }, [searchTermData, selectedCampaign]);
+
+  const filteredData = useMemo(() => {
+    let filtered = searchTermData;
+    if (selectedCampaign !== 'all') {
+      filtered = filtered.filter(t => t.campaign === selectedCampaign);
+    }
+    if (selectedAdGroup !== 'all') {
+      filtered = filtered.filter(t => t.adGroup === selectedAdGroup);
+    }
+    return filtered;
+  }, [searchTermData, selectedCampaign, selectedAdGroup]);
+
+  const handleCampaignChange = (value: string) => {
+    setSelectedCampaign(value);
+    setSelectedAdGroup('all');
+  };
+
   const suggestedNegatives = useMemo(() => {
-    // Prefer suggesting the actual search term (as phrase match) for safety, then de-dupe by normalized text.
-    const candidates = searchTermData
+    const candidates = filteredData
       .filter((t) => t.conversions === 0 && t.cost > 5)
       .slice()
       .sort((a, b) => b.cost - a.cost)
@@ -74,7 +112,7 @@ export default function SearchTermsPage() {
     }
 
     return Object.values(bestByKey).slice(0, 8);
-  }, [searchTermData]);
+  }, [filteredData]);
 
   const activeSuggestions = suggestedNegatives.filter(
     (s) => !dismissedSuggestions.includes(s.key)
@@ -177,7 +215,14 @@ export default function SearchTermsPage() {
           </Button>
         ),
         cell: ({ row }) => (
-          <p className="max-w-[300px] truncate font-medium">{row.getValue('searchTerm')}</p>
+          <div className="max-w-[300px]">
+            <p className="truncate font-medium">{row.getValue('searchTerm')}</p>
+            {(row.original.adGroup || row.original.campaign) && (
+              <p className="text-xs text-muted-foreground truncate">
+                {row.original.adGroup} {row.original.campaign && `• ${row.original.campaign}`}
+              </p>
+            )}
+          </div>
         ),
       },
       {
@@ -301,11 +346,13 @@ export default function SearchTermsPage() {
 
   const handleExport = () => {
     const csv = [
-      ['Search Term', 'Matched Keyword', 'Match Type', 'Impressions', 'Clicks', 'CTR', 'Cost', 'Conversions', 'CPA'],
-      ...searchTermData.map((t) => [
+      ['Search Term', 'Matched Keyword', 'Match Type', 'Ad Group', 'Campaign', 'Impressions', 'Clicks', 'CTR', 'Cost', 'Conversions', 'CPA'],
+      ...filteredData.map((t) => [
         t.searchTerm,
         t.matchedKeyword,
         t.matchType,
+        t.adGroup || '',
+        t.campaign || '',
         t.impressions,
         t.clicks,
         t.ctr,
@@ -353,24 +400,61 @@ export default function SearchTermsPage() {
         </p>
       </div>
 
+      <div className="flex flex-wrap items-center gap-3">
+        {campaigns.length > 0 && (
+          <div className="flex items-center gap-2">
+            <Filter className="h-4 w-4 text-muted-foreground" />
+            <Select value={selectedCampaign} onValueChange={handleCampaignChange}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="Filter by campaign" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Campaigns ({searchTermData.length})</SelectItem>
+                {campaigns.map((campaign) => {
+                  const count = searchTermData.filter(t => t.campaign === campaign).length;
+                  return (
+                    <SelectItem key={campaign} value={campaign}>
+                      {campaign} ({count})
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+        {adGroups.length > 0 && (
+          <Select value={selectedAdGroup} onValueChange={setSelectedAdGroup}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="Filter by ad group" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Ad Groups</SelectItem>
+              {adGroups.map((adGroup) => (
+                <SelectItem key={adGroup} value={adGroup}>
+                  {adGroup}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+      </div>
+
       <div
         className={cn(
           'grid gap-6',
           hasRightPanel ? '2xl:grid-cols-[minmax(0,1fr)_420px] 2xl:items-start' : 'grid-cols-1'
         )}
       >
-        {/* Search Terms Table */}
         <div className="space-y-6">
           <DataTable
             columns={columns}
-            data={searchTermData}
+            data={filteredData}
             searchColumn="searchTerm"
             searchPlaceholder="Search terms..."
             onExport={handleExport}
           />
         </div>
 
-        {/* AI Negative Keyword Suggestions */}
         {hasRightPanel ? (
           <Card className="border-primary/20 bg-primary/5 2xl:sticky 2xl:top-20">
             <CardHeader className="pb-3">

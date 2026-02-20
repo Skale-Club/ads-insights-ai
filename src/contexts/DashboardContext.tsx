@@ -40,7 +40,6 @@ interface DashboardContextType {
   previousPeriodRange: DateRange;
   lastRefreshed: Date | null;
   setLastRefreshed: (date: Date) => void;
-  // Chat State
   chatWidth: number;
   setChatWidth: (width: number) => void;
 }

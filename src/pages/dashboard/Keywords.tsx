@@ -1,12 +1,19 @@
 import { useMemo, useState } from 'react';
 import { type ColumnDef } from '@tanstack/react-table';
-import { ArrowUpDown, Loader2, Ban, KeyRound } from 'lucide-react';
+import { ArrowUpDown, Loader2, Ban, KeyRound, Filter } from 'lucide-react';
 import { DataTable } from '@/components/dashboard/DataTable';
 import { KeywordHighlights, type Keyword } from '@/components/dashboard/KeywordHighlights';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useDashboard } from '@/contexts/DashboardContext';
 import { useGoogleAdsReport } from '@/hooks/useGoogleAdsReport';
 import { cn } from '@/lib/utils';
@@ -37,31 +44,57 @@ export default function KeywordsPage() {
   const { data: keywords, isLoading } = useGoogleAdsReport<Keyword[]>('keywords');
   const { data: negativeKeywordsData, isLoading: isLoadingNegative } = useGoogleAdsReport<NegativeKeyword[]>('negativeKeywords');
   const [activeTab, setActiveTab] = useState('positive');
+  const [selectedCampaign, setSelectedCampaign] = useState<string>('all');
+  const [selectedAdGroup, setSelectedAdGroup] = useState<string>('all');
 
   const keywordData = (keywords as Keyword[] | undefined) || [];
   const negativeKeywordData = (negativeKeywordsData as NegativeKeyword[] | undefined) || [];
 
+  const campaigns = useMemo(() => {
+    const uniqueCampaigns = [...new Set(keywordData.map(k => k.campaign).filter(Boolean))].sort();
+    return uniqueCampaigns;
+  }, [keywordData]);
+
+  const adGroups = useMemo(() => {
+    const filtered = selectedCampaign === 'all' 
+      ? keywordData 
+      : keywordData.filter(k => k.campaign === selectedCampaign);
+    const uniqueAdGroups = [...new Set(filtered.map(k => k.adGroup).filter(Boolean))].sort();
+    return uniqueAdGroups;
+  }, [keywordData, selectedCampaign]);
+
+  const filteredData = useMemo(() => {
+    let filtered = keywordData;
+    if (selectedCampaign !== 'all') {
+      filtered = filtered.filter(k => k.campaign === selectedCampaign);
+    }
+    if (selectedAdGroup !== 'all') {
+      filtered = filtered.filter(k => k.adGroup === selectedAdGroup);
+    }
+    return filtered;
+  }, [keywordData, selectedCampaign, selectedAdGroup]);
+
   const bestKeywords = useMemo(
     () =>
-      [...keywordData]
+      [...filteredData]
         .filter((k) => k.conversions > 0)
         .sort((a, b) => a.cpa - b.cpa)
         .slice(0, 5),
-    [keywordData]
+    [filteredData]
   );
 
   const worstKeywords = useMemo(
     () =>
-      [...keywordData]
+      [...filteredData]
         .filter((k) => k.cost > 100)
         .sort((a, b) => b.cpa - a.cpa)
         .slice(0, 5),
-    [keywordData]
+    [filteredData]
   );
 
   const matchTypeStats = useMemo(() => {
     const stats = { exact: { cost: 0, conv: 0 }, phrase: { cost: 0, conv: 0 }, broad: { cost: 0, conv: 0 } };
-    keywordData.forEach((k) => {
+    filteredData.forEach((k) => {
       const mt = k.matchType as keyof typeof stats;
       if (stats[mt]) {
         stats[mt].cost += k.cost;
@@ -69,7 +102,7 @@ export default function KeywordsPage() {
       }
     });
     return stats;
-  }, [keywordData]);
+  }, [filteredData]);
 
   const negativeStats = useMemo(() => {
     const byMatchType = { exact: 0, phrase: 0, broad: 0 };
@@ -86,6 +119,11 @@ export default function KeywordsPage() {
     });
     return { total: negativeKeywordData.length, byMatchType, byLevel };
   }, [negativeKeywordData]);
+
+  const handleCampaignChange = (value: string) => {
+    setSelectedCampaign(value);
+    setSelectedAdGroup('all');
+  };
 
   const columns: ColumnDef<Keyword>[] = useMemo(
     () => [
@@ -104,6 +142,11 @@ export default function KeywordsPage() {
         cell: ({ row }) => (
           <div className="max-w-[300px]">
             <p className="font-medium truncate">{row.getValue('keyword')}</p>
+            {(row.original.adGroup || row.original.campaign) && (
+              <p className="text-xs text-muted-foreground truncate">
+                {row.original.adGroup} {row.original.campaign && `• ${row.original.campaign}`}
+              </p>
+            )}
           </div>
         ),
       },
@@ -407,7 +450,7 @@ export default function KeywordsPage() {
         ),
         cell: ({ row }) => (
           <div className="max-w-[200px]">
-            <p className="truncate text-muted-foreground">{row.getValue('adGroup')}</p>
+            <p className="truncate text-muted-foreground">{row.getValue('adGroup') || '-'}</p>
           </div>
         ),
       },
@@ -448,7 +491,7 @@ export default function KeywordsPage() {
   const handleExport = () => {
     const csv = [
       ['Keyword', 'Match Type', 'Status', 'Impressions', 'Clicks', 'CTR', 'Avg CPC', 'Cost', 'Conversions', 'CPA', 'Quality Score'],
-      ...keywordData.map((k) => [
+      ...filteredData.map((k) => [
         k.keyword,
         k.matchType,
         k.status,
@@ -475,10 +518,11 @@ export default function KeywordsPage() {
 
   const handleExportNegative = () => {
     const csv = [
-      ['Negative Keyword', 'Match Type', 'Campaign', 'Ad Group', 'Status'],
+      ['Negative Keyword', 'Match Type', 'Level', 'Campaign', 'Ad Group', 'Status'],
       ...negativeKeywordData.map((k) => [
         k.keyword,
         k.matchType,
+        k.level,
         k.campaign,
         k.adGroup,
         k.status,
@@ -527,7 +571,7 @@ export default function KeywordsPage() {
         <TabsList>
           <TabsTrigger value="positive" className="flex items-center gap-2">
             <KeyRound className="h-4 w-4" />
-            Keywords ({keywordData.length})
+            Keywords ({filteredData.length})
           </TabsTrigger>
           <TabsTrigger value="negative" className="flex items-center gap-2">
             <Ban className="h-4 w-4" />
@@ -536,6 +580,45 @@ export default function KeywordsPage() {
         </TabsList>
 
         <TabsContent value="positive" className="space-y-6 mt-6">
+          <div className="flex flex-wrap items-center gap-3">
+            {campaigns.length > 0 && (
+              <div className="flex items-center gap-2">
+                <Filter className="h-4 w-4 text-muted-foreground" />
+                <Select value={selectedCampaign} onValueChange={handleCampaignChange}>
+                  <SelectTrigger className="w-[200px]">
+                    <SelectValue placeholder="Filter by campaign" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Campaigns ({keywordData.length})</SelectItem>
+                    {campaigns.map((campaign) => {
+                      const count = keywordData.filter(k => k.campaign === campaign).length;
+                      return (
+                        <SelectItem key={campaign} value={campaign}>
+                          {campaign} ({count})
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {adGroups.length > 0 && (
+              <Select value={selectedAdGroup} onValueChange={setSelectedAdGroup}>
+                <SelectTrigger className="w-[200px]">
+                  <SelectValue placeholder="Filter by ad group" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Ad Groups</SelectItem>
+                  {adGroups.map((adGroup) => (
+                    <SelectItem key={adGroup} value={adGroup}>
+                      {adGroup}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+
           <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
             {(['exact', 'phrase', 'broad'] as const).map((type) => (
               <Card key={type}>
@@ -565,7 +648,7 @@ export default function KeywordsPage() {
 
           <DataTable
             columns={columns}
-            data={keywordData}
+            data={filteredData}
             searchColumn="keyword"
             searchPlaceholder="Search keywords..."
             onExport={handleExport}
