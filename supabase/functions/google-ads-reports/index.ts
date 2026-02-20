@@ -142,6 +142,18 @@ function buildQuery(reportType: ReportType, startDate: string, endDate: string):
         WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
       `;
 
+    case "budgets":
+      return `
+        SELECT
+          campaign_budget.id,
+          campaign_budget.name,
+          campaign_budget.status,
+          campaign_budget.amount_micros,
+          metrics.cost_micros
+        FROM campaign_budget
+        WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+      `;
+
     default:
       throw new Error(`Unknown report type: ${reportType}`);
   }
@@ -472,6 +484,40 @@ function transformAudiences(results: any[]) {
   }));
 }
 
+function transformBudgets(results: any[]) {
+  const budgetMap: Record<string, any> = {};
+
+  for (const row of results) {
+    const id = row.campaignBudget?.id;
+    if (!id) continue;
+
+    if (!budgetMap[id]) {
+      const status = (row.campaignBudget?.status || "enabled").toLowerCase();
+      const amount = microsToAmount(row.campaignBudget?.amountMicros || 0);
+
+      budgetMap[id] = {
+        id: String(id),
+        name: row.campaignBudget?.name || `Budget ${id}`,
+        status: status === "enabled" ? "enabled" : "paused",
+        amount: amount,
+        spent: 0,
+        campaignsCount: 0,
+      };
+    }
+
+    const budget = budgetMap[id];
+    budget.spent += microsToAmount(row.metrics?.costMicros || 0);
+    budget.campaignsCount += 1;
+  }
+
+  return Object.values(budgetMap).map((b: any) => ({
+    ...b,
+    remaining: b.amount - b.spent,
+    utilization: b.amount > 0 ? (b.spent / b.amount) * 100 : 0,
+    campaignsCount: b.campaignsCount,
+  }));
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -557,6 +603,9 @@ serve(async (req) => {
         break;
       case "audiences":
         data = transformAudiences(results);
+        break;
+      case "budgets":
+        data = transformBudgets(results);
         break;
       default:
         throw new Error(`Unknown report type: ${reportType}`);
