@@ -1,13 +1,13 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { type ColumnDef } from '@tanstack/react-table';
-import { 
-  ArrowUpDown, 
-  Loader2, 
-  Target, 
-  MousePointerClick, 
-  Phone, 
-  ShoppingCart, 
-  UserPlus, 
+import {
+  ArrowUpDown,
+  Loader2,
+  Target,
+  MousePointerClick,
+  Phone,
+  ShoppingCart,
+  UserPlus,
   FileDown,
   DollarSign,
   TrendingUp,
@@ -17,13 +17,21 @@ import {
   Zap,
   Globe,
   Smartphone,
-  BarChart3
+  BarChart3,
+  Filter
 } from 'lucide-react';
 import { DataTable } from '@/components/dashboard/DataTable';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useDashboard } from '@/contexts/DashboardContext';
 import { useGoogleAdsReport } from '@/hooks/useGoogleAdsReport';
 import { cn } from '@/lib/utils';
@@ -44,6 +52,19 @@ interface Conversion {
   value: number;
   roas: number;
   hasConversions: boolean;
+  campaign?: string;
+  adGroup?: string;
+}
+
+interface OverviewData {
+  spend: number;
+  conversions: number;
+  conversionsValue: number;
+  impressions: number;
+  clicks: number;
+  cpa: number;
+  roas: number;
+  ctr: number;
 }
 
 const formatCurrency = (value: number) =>
@@ -82,31 +103,85 @@ export default function ConversionsPage() {
   const { data, isLoading } = useGoogleAdsReport<Conversion[]>('conversions');
   const conversionData = (data as Conversion[] | undefined) || [];
 
+  const { data: overviewData } = useGoogleAdsReport<OverviewData>('overview');
+
+  const [selectedCampaign, setSelectedCampaign] = useState<string>('all');
+  const [selectedAdGroup, setSelectedAdGroup] = useState<string>('all');
+
+  const campaigns = useMemo(() => {
+    const uniqueCampaigns = [...new Set(conversionData.map(k => k.campaign).filter(Boolean))].sort();
+    return uniqueCampaigns;
+  }, [conversionData]);
+
+  const adGroups = useMemo(() => {
+    const filtered = selectedCampaign === 'all'
+      ? conversionData
+      : conversionData.filter(k => k.campaign === selectedCampaign);
+    const uniqueAdGroups = [...new Set(filtered.map(k => k.adGroup).filter(Boolean))].sort();
+    return uniqueAdGroups;
+  }, [conversionData, selectedCampaign]);
+
+  const filteredConversionData = useMemo(() => {
+    let filtered = conversionData;
+    if (selectedCampaign !== 'all') {
+      filtered = filtered.filter(k => k.campaign === selectedCampaign || (!k.campaign && k.conversions === 0));
+    }
+    if (selectedAdGroup !== 'all') {
+      filtered = filtered.filter(k => k.adGroup === selectedAdGroup || (!k.adGroup && k.conversions === 0));
+    }
+
+    const grouped = new Map<string, Conversion>();
+    filtered.forEach(row => {
+      if (!grouped.has(row.id)) {
+        grouped.set(row.id, { ...row });
+      } else {
+        const existing = grouped.get(row.id)!;
+        existing.conversions += row.conversions;
+        existing.allConversions += row.allConversions;
+        existing.value += row.value;
+        existing.hasConversions = existing.hasConversions || row.hasConversions;
+      }
+    });
+
+    return Array.from(grouped.values()).sort((a, b) => b.conversions - a.conversions);
+  }, [conversionData, selectedCampaign, selectedAdGroup]);
+
+  const handleCampaignChange = (value: string) => {
+    setSelectedCampaign(value);
+    setSelectedAdGroup('all');
+  };
+
   const stats = useMemo(() => {
-    const totalConversions = conversionData.reduce((sum, c) => sum + c.conversions, 0);
-    const totalCost = conversionData.reduce((sum, c) => sum + c.cost, 0);
-    const totalValue = conversionData.reduce((sum, c) => sum + c.value, 0);
-    const avgCpa = totalConversions > 0 ? totalCost / totalConversions : 0;
-    const overallRoas = totalCost > 0 ? totalValue / totalCost : 0;
-    const activeCount = conversionData.filter(c => c.status === 'enabled').length;
-    const receivingHits = conversionData.filter(c => c.hasConversions).length;
-    const notReceivingHits = conversionData.filter(c => !c.hasConversions && c.status === 'enabled').length;
-    return { 
-      totalConversions, 
-      totalCost, 
-      totalValue, 
-      avgCpa, 
+    const totalConversions = filteredConversionData.reduce((sum, c) => sum + c.conversions, 0);
+    const totalValue = filteredConversionData.reduce((sum, c) => sum + c.value, 0);
+
+    const overview = overviewData as OverviewData | undefined;
+    const isFiltered = selectedCampaign !== 'all' || selectedAdGroup !== 'all';
+
+    // Cost/CPA/ROAS from overview are only accurate at account level
+    const totalCost = isFiltered ? 0 : (overview?.spend || 0);
+    const avgCpa = isFiltered ? 0 : (overview?.cpa || (totalConversions > 0 ? totalCost / totalConversions : 0));
+    const overallRoas = isFiltered ? 0 : (overview?.roas || (totalCost > 0 ? totalValue / totalCost : 0));
+
+    const activeCount = filteredConversionData.filter(c => c.status === 'enabled').length;
+    const receivingHits = filteredConversionData.filter(c => c.hasConversions).length;
+    const notReceivingHits = filteredConversionData.filter(c => !c.hasConversions && c.status === 'enabled').length;
+    return {
+      totalConversions,
+      totalCost,
+      totalValue,
+      avgCpa,
       overallRoas,
       activeCount,
       receivingHits,
       notReceivingHits,
-      total: conversionData.length 
+      total: filteredConversionData.length
     };
-  }, [conversionData]);
+  }, [filteredConversionData, overviewData, selectedCampaign, selectedAdGroup]);
 
   const byCategory = useMemo(() => {
     const categories: Record<string, { count: number; conversions: number; value: number }> = {};
-    conversionData.forEach(c => {
+    filteredConversionData.forEach(c => {
       const cat = c.category || 'Other';
       if (!categories[cat]) {
         categories[cat] = { count: 0, conversions: 0, value: 0 };
@@ -138,20 +213,24 @@ export default function ConversionsPage() {
       ...data,
       Icon: typeIcons[name] || Target,
     })).sort((a, b) => b.conversions - a.conversions);
-  }, [conversionData]);
+  }, [filteredConversionData]);
 
   const topPerformers = useMemo(() => {
-    return [...conversionData]
+    return [...filteredConversionData]
       .filter(c => c.conversions > 0)
       .sort((a, b) => b.conversions - a.conversions)
       .slice(0, 5);
-  }, [conversionData]);
+  }, [filteredConversionData]);
 
   const needsAttention = useMemo(() => {
-    return [...conversionData]
+    return [...filteredConversionData]
       .filter(c => c.status === 'enabled' && !c.hasConversions)
       .sort((a, b) => b.cost - a.cost);
-  }, [conversionData]);
+  }, [filteredConversionData]);
+
+  const activeConversions = useMemo(() => {
+    return filteredConversionData.filter(c => c.status === 'enabled');
+  }, [filteredConversionData]);
 
   const columns: ColumnDef<Conversion>[] = useMemo(
     () => [
@@ -333,6 +412,42 @@ export default function ConversionsPage() {
         </p>
       </div>
 
+      <div className="flex flex-wrap items-center gap-3">
+        {campaigns.length > 0 && (
+          <div className="flex items-center gap-2">
+            <Filter className="h-4 w-4 text-muted-foreground" />
+            <Select value={selectedCampaign} onValueChange={handleCampaignChange}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="Filter by campaign" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Campaigns</SelectItem>
+                {campaigns.map((campaign) => (
+                  <SelectItem key={campaign} value={campaign}>
+                    {campaign}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+        {adGroups.length > 0 && (
+          <Select value={selectedAdGroup} onValueChange={setSelectedAdGroup}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="Filter by ad group" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Ad Groups</SelectItem>
+              {adGroups.map((adGroup) => (
+                <SelectItem key={adGroup} value={adGroup}>
+                  {adGroup}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+      </div>
+
       {/* Main Stats */}
       <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
         <Card>
@@ -357,7 +472,11 @@ export default function ConversionsPage() {
             <CardTitle className="text-sm font-medium">Avg CPA</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{stats.avgCpa > 0 ? formatCurrency(stats.avgCpa) : '-'}</p>
+            {selectedCampaign !== 'all' ? (
+              <p className="text-sm text-muted-foreground pt-1">Account-level only</p>
+            ) : (
+              <p className="text-2xl font-bold">{stats.avgCpa > 0 ? formatCurrency(stats.avgCpa) : '-'}</p>
+            )}
           </CardContent>
         </Card>
         <Card>
@@ -365,9 +484,13 @@ export default function ConversionsPage() {
             <CardTitle className="text-sm font-medium">Overall ROAS</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className={cn('text-2xl font-bold', stats.overallRoas >= 2 && 'text-success', stats.overallRoas < 1 && stats.overallRoas > 0 && 'text-destructive')}>
-              {stats.overallRoas > 0 ? `${stats.overallRoas.toFixed(2)}x` : '-'}
-            </p>
+            {selectedCampaign !== 'all' ? (
+              <p className="text-sm text-muted-foreground pt-1">Account-level only</p>
+            ) : (
+              <p className={cn('text-2xl font-bold', stats.overallRoas >= 2 && 'text-success', stats.overallRoas < 1 && stats.overallRoas > 0 && 'text-destructive')}>
+                {stats.overallRoas > 0 ? `${stats.overallRoas.toFixed(2)}x` : '-'}
+              </p>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -386,8 +509,8 @@ export default function ConversionsPage() {
             <div className="flex items-center gap-4">
               <p className="text-3xl font-bold text-success">{stats.receivingHits}</p>
               <div className="flex-1">
-                <Progress 
-                  value={stats.activeCount > 0 ? (stats.receivingHits / stats.activeCount) * 100 : 0} 
+                <Progress
+                  value={stats.activeCount > 0 ? (stats.receivingHits / stats.activeCount) * 100 : 0}
                   className="h-2"
                 />
                 <p className="text-xs text-muted-foreground mt-1">
@@ -411,7 +534,7 @@ export default function ConversionsPage() {
               </CardTitle>
             </div>
             <CardDescription>
-              {needsAttention.length > 0 
+              {needsAttention.length > 0
                 ? 'Active actions not receiving any hits'
                 : 'All active conversion actions are tracking properly'
               }
@@ -558,9 +681,9 @@ export default function ConversionsPage() {
         <CardContent>
           <DataTable
             columns={columns}
-            data={conversionData}
+            data={activeConversions}
             searchColumn="name"
-            searchPlaceholder="Search conversion actions..."
+            searchPlaceholder="Search active actions..."
           />
         </CardContent>
       </Card>

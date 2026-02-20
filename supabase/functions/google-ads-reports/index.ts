@@ -129,22 +129,8 @@ function buildQuery(reportType: ReportType, startDate: string, endDate: string):
       `;
 
     case "audiences":
-      return `
-        SELECT
-          audience.id,
-          audience.name,
-          audience.type,
-          ad_group_criterion.status,
-          metrics.cost_micros,
-          metrics.impressions,
-          metrics.clicks,
-          metrics.conversions,
-          segments.audience_asset_group.audience_asset_group,
-          ad_group_criterion.user_interest.user_interest_category,
-          ad_group_criterion.user_list.user_list
-        FROM audience_view
-        WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
-      `;
+      return "use_fetch_audiences_special";
+
 
     case "budgets":
       return `
@@ -159,23 +145,8 @@ function buildQuery(reportType: ReportType, startDate: string, endDate: string):
       `;
 
     case "conversions":
-      return `
-        SELECT
-          conversion_action.id,
-          conversion_action.name,
-          conversion_action.category,
-          conversion_action.status,
-          conversion_action.type,
-          conversion_action.counting_type,
-          conversion_action.primary_for_goal,
-          metrics.cost_micros,
-          metrics.conversions,
-          metrics.conversions_value,
-          metrics.clicks,
-          metrics.all_conversions
-        FROM conversion_action
-        WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
-      `;
+      // We do not return a query string here because we will use fetchConversionsSpecial
+      return "SPECIAL_CONVERSIONS_QUERY";
 
     case "negativeKeywords":
       return `
@@ -392,7 +363,7 @@ function transformAdGroups(results: any[]) {
 
     if (!adGroupMap[id]) {
       const status = (row.adGroup?.status || "").toLowerCase();
-      
+
       adGroupMap[id] = {
         id: String(id),
         name: row.adGroup?.name || `Ad Group ${id}`,
@@ -476,26 +447,30 @@ function transformAudiences(results: any[]) {
   const audienceMap: Record<string, any> = {};
 
   for (const row of results) {
-    const id = row.audience?.id || row.adGroupCriterion?.criterionId;
+    const id = row.adGroupCriterion?.criterionId;
     if (!id) continue;
 
     const key = String(id);
     if (!audienceMap[key]) {
       const status = (row.adGroupCriterion?.status || "enabled").toLowerCase();
-      const audienceType = (row.audience?.type || "").toLowerCase();
+
+      let audienceType = "other";
+      const criterionType = (row.adGroupCriterion?.type || "").toLowerCase();
+
+      if (criterionType === "user_interest") audienceType = "user_interest";
+      else if (criterionType === "user_list") audienceType = "user_list";
+      else if (criterionType.includes("custom")) audienceType = "custom_audience";
+
       const typeMap: Record<string, string> = {
         "user_interest": "Interest",
         "user_list": "Remarketing",
         "custom_audience": "Custom",
-        "lookalike": "Lookalike",
-        "detailed_demographic": "Demographic",
-        "life_event": "Life Event",
+        "other": "Other",
       };
 
-      const name = row.audience?.name || 
-                   row.adGroupCriterion?.userInterest?.userInterestCategory || 
-                   row.adGroupCriterion?.userList?.userList || 
-                   `Audience ${id}`;
+      const name = row.adGroupCriterion?.userInterest?.userInterestCategory ||
+        row.adGroupCriterion?.userList?.userList ||
+        `Audience ${id}`;
 
       audienceMap[key] = {
         id: key,
@@ -634,6 +609,315 @@ function transformConversions(results: any[]) {
   }));
 }
 
+async function fetchConversionsSpecial(
+  cleanCustomerId: string,
+  headers: Record<string, string>,
+  startDate: string,
+  endDate: string
+): Promise<{ data: any[]; errors: string[] }> {
+  const errors: string[] = [];
+
+  const actionsQuery = `
+    SELECT
+      conversion_action.id,
+      conversion_action.name,
+      conversion_action.category,
+      conversion_action.status,
+      conversion_action.type,
+      conversion_action.counting_type,
+      conversion_action.primary_for_goal
+    FROM conversion_action
+    WHERE conversion_action.status != 'REMOVED'
+  `;
+
+  const metricsQuery = `
+    SELECT
+      segments.conversion_action,
+      campaign.name,
+      ad_group.name,
+      metrics.conversions,
+      metrics.conversions_value,
+      metrics.all_conversions,
+      metrics.all_conversions_value
+    FROM ad_group
+    WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+  `;
+
+  let actionsResults: any[] = [];
+  let metricsResults: any[] = [];
+
+  try {
+    const resA = await fetch(
+      `https://googleads.googleapis.com/${API_VERSION}/customers/${cleanCustomerId}/googleAds:searchStream`,
+      { method: "POST", headers, body: JSON.stringify({ query: actionsQuery }) }
+    );
+    if (resA.ok) {
+      const data = await resA.json();
+      actionsResults = data.reduce((acc: any[], batch: any) => acc.concat(batch.results || []), []);
+    } else {
+      errors.push(`Actions query failed: ${await resA.text()}`);
+    }
+  } catch (e) {
+    errors.push(`Actions query error: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  try {
+    const resM = await fetch(
+      `https://googleads.googleapis.com/${API_VERSION}/customers/${cleanCustomerId}/googleAds:searchStream`,
+      { method: "POST", headers, body: JSON.stringify({ query: metricsQuery }) }
+    );
+    if (resM.ok) {
+      const data = await resM.json();
+      metricsResults = data.reduce((acc: any[], batch: any) => acc.concat(batch.results || []), []);
+    } else {
+      errors.push(`Metrics query failed: ${await resM.text()}`);
+    }
+  } catch (e) {
+    errors.push(`Metrics query error: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  const conversionMap: Record<string, any> = {};
+
+  const categoryMap: Record<string, string> = {
+    "purchase": "Purchase",
+    "lead": "Lead",
+    "sign_up": "Sign Up",
+    "add_to_cart": "Add to Cart",
+    "begin_checkout": "Begin Checkout",
+    "subscribe": "Subscribe",
+    "download": "Download",
+    "page_view": "Page View",
+    "other": "Other",
+  };
+
+  const typeMap: Record<string, string> = {
+    "webpage_on_click": "Website",
+    "webpage": "Website",
+    "app_install": "App Install",
+    "app_in_app_action": "App Action",
+    "phone_call": "Phone Call",
+    "import": "Import",
+    "analytics": "Analytics",
+    "website": "Website",
+  };
+
+  const countingMap: Record<string, string> = {
+    "one_per_click": "One per click",
+    "many_per_click": "Every conversion",
+    "one_per_conversion": "One per conversion",
+  };
+
+  for (const row of actionsResults) {
+    const id = row.conversionAction?.id;
+    if (!id) continue;
+
+    const status = (row.conversionAction?.status || "enabled").toLowerCase();
+    const category = (row.conversionAction?.category || "other").toLowerCase();
+    const type = (row.conversionAction?.type || "").toLowerCase();
+    const countingType = (row.conversionAction?.countingType || "").toLowerCase();
+    const primaryForGoal = row.conversionAction?.primaryForGoal ?? true;
+
+    conversionMap[id] = {
+      id: String(id),
+      name: row.conversionAction?.name || `Conversion ${id}`,
+      category: categoryMap[category] || category.replace(/_/g, " "),
+      type: typeMap[type] || type.replace(/_/g, " "),
+      countingType: countingMap[countingType] || countingType.replace(/_/g, " "),
+      status: status === "enabled" ? "enabled" : "paused",
+      primaryForGoal: primaryForGoal,
+      conversions: 0,
+      allConversions: 0,
+      cost: 0,
+      value: 0,
+      clicks: 0,
+    };
+  }
+
+  const finalData: any[] = [];
+  const handledActionIds = new Set<string>();
+
+  for (const row of metricsResults) {
+    const resourceName = row.segments?.conversionAction;
+    if (!resourceName) continue;
+    const parts = resourceName.split('/');
+    const id = parts[parts.length - 1];
+
+    if (conversionMap[id]) {
+      const campaign = row.campaign?.name || "";
+      const adGroup = row.adGroup?.name || "";
+
+      handledActionIds.add(id);
+
+      const conversions = Number(row.metrics?.conversions || 0);
+      const allConversions = Number(row.metrics?.allConversions || 0);
+      const value = Number(row.metrics?.conversionsValue || 0);
+
+      finalData.push({
+        ...conversionMap[id],
+        campaign,
+        adGroup,
+        conversions,
+        allConversions,
+        value,
+        cost: 0,
+        clicks: 0,
+        cpa: 0,
+        conversionRate: 0,
+        roas: 0,
+        hasConversions: conversions > 0 || allConversions > 0,
+      });
+    }
+  }
+
+  // Include actions that have no metrics in this date range at all
+  for (const id in conversionMap) {
+    if (!handledActionIds.has(id)) {
+      finalData.push({
+        ...conversionMap[id],
+        campaign: "",
+        adGroup: "",
+        conversions: 0,
+        allConversions: 0,
+        value: 0,
+        cost: 0,
+        clicks: 0,
+        cpa: 0,
+        conversionRate: 0,
+        roas: 0,
+        hasConversions: false,
+      });
+    }
+  }
+
+  const data = finalData;
+
+  return { data, errors };
+}
+
+async function fetchAudiencesSpecial(
+  cleanCustomerId: string,
+  headers: Record<string, string>,
+  startDate: string,
+  endDate: string
+): Promise<{ data: any[]; errors: string[] }> {
+  const errors: string[] = [];
+
+  const adGroupQuery = `
+    SELECT
+      ad_group_criterion.criterion_id,
+      ad_group_criterion.type,
+      ad_group_criterion.status,
+      ad_group_criterion.display_name,
+      metrics.cost_micros,
+      metrics.impressions,
+      metrics.clicks,
+      metrics.conversions
+    FROM ad_group_audience_view
+    WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+  `;
+
+  const campaignQuery = `
+    SELECT
+      campaign_criterion.criterion_id,
+      campaign_criterion.type,
+      campaign_criterion.status,
+      campaign_criterion.display_name,
+      metrics.cost_micros,
+      metrics.impressions,
+      metrics.clicks,
+      metrics.conversions
+    FROM campaign_audience_view
+    WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+  `;
+
+  let adGroupResults: any[] = [];
+  let campaignResults: any[] = [];
+
+  try {
+    const adGroupResponse = await fetch(
+      `https://googleads.googleapis.com/${API_VERSION}/customers/${cleanCustomerId}/googleAds:searchStream`,
+      { method: "POST", headers, body: JSON.stringify({ query: adGroupQuery }) }
+    );
+    if (adGroupResponse.ok) {
+      const data = await adGroupResponse.json();
+      adGroupResults = data.reduce((acc: any[], batch: any) => acc.concat(batch.results || []), []);
+    } else {
+      errors.push(`Ad group audience query failed`);
+    }
+
+    const campaignResponse = await fetch(
+      `https://googleads.googleapis.com/${API_VERSION}/customers/${cleanCustomerId}/googleAds:searchStream`,
+      { method: "POST", headers, body: JSON.stringify({ query: campaignQuery }) }
+    );
+    if (campaignResponse.ok) {
+      const data = await campaignResponse.json();
+      campaignResults = data.reduce((acc: any[], batch: any) => acc.concat(batch.results || []), []);
+    } else {
+      errors.push(`Campaign audience query failed`);
+    }
+  } catch (e: any) {
+    errors.push(`Audience query error: ${e.message}`);
+  }
+
+  const audienceMap: Record<string, any> = {};
+
+  const processResults = (results: any[], isCampaign: boolean) => {
+    for (const row of results) {
+      const criterion = isCampaign ? row.campaignCriterion : row.adGroupCriterion;
+      if (!criterion || !criterion.criterionId) continue;
+
+      const id = String(criterion.criterionId);
+      if (!audienceMap[id]) {
+        const criterionType = (criterion.type || "").toLowerCase();
+        let audienceType = "other";
+
+        if (criterionType === "user_interest") audienceType = "user_interest";
+        else if (criterionType === "user_list") audienceType = "user_list";
+        else if (criterionType.includes("custom")) audienceType = "custom_audience";
+
+        const typeMap: Record<string, string> = {
+          "user_interest": "Interest",
+          "user_list": "Remarketing",
+          "custom_audience": "Custom",
+          "other": "Other",
+        };
+
+        const name = criterion.displayName || `Audience ${id}`;
+        const status = (criterion.status || "enabled").toLowerCase();
+
+        audienceMap[id] = {
+          id: id,
+          name: name,
+          type: typeMap[audienceType] || audienceType.replace(/_/g, " "),
+          status: status === "enabled" ? "enabled" : "paused",
+          reach: 0,
+          impressions: 0,
+          clicks: 0,
+          cost: 0,
+          conversions: 0,
+        };
+      }
+
+      const aud = audienceMap[id];
+      aud.impressions += Number(row.metrics?.impressions || 0);
+      aud.clicks += Number(row.metrics?.clicks || 0);
+      aud.cost += microsToAmount(row.metrics?.costMicros || 0);
+      aud.conversions += Number(row.metrics?.conversions || 0);
+    }
+  };
+
+  processResults(adGroupResults, false);
+  processResults(campaignResults, true);
+
+  const data = Object.values(audienceMap).map((aud: any) => ({
+    ...aud,
+    ctr: aud.impressions > 0 ? (aud.clicks / aud.impressions) * 100 : 0,
+    cpa: aud.conversions > 0 ? aud.cost / aud.conversions : 0,
+  }));
+
+  return { data, errors };
+}
+
 function transformNegativeKeywords(results: any[]) {
   return results.map((row) => {
     const id = row.adGroupCriterion?.criterionId;
@@ -658,7 +942,7 @@ async function fetchNegativeKeywordsBothLevels(
 ): Promise<any[]> {
   const adGroupQuery = `
     SELECT
-      ad_group_criterion.criterion_id,
+    ad_group_criterion.criterion_id,
       ad_group_criterion.keyword.text,
       ad_group_criterion.keyword.match_type,
       ad_group_criterion.status,
@@ -667,11 +951,11 @@ async function fetchNegativeKeywordsBothLevels(
     FROM ad_group_criterion
     WHERE ad_group_criterion.negative = true
       AND ad_group_criterion.status != 'REMOVED'
-  `;
+      `;
 
   const campaignQuery = `
     SELECT
-      campaign_criterion.criterion_id,
+    campaign_criterion.criterion_id,
       campaign_criterion.keyword.text,
       campaign_criterion.keyword.match_type,
       campaign_criterion.status,
@@ -679,9 +963,9 @@ async function fetchNegativeKeywordsBothLevels(
     FROM campaign_criterion
     WHERE campaign_criterion.negative = true
       AND campaign_criterion.status != 'REMOVED'
-  `;
+      `;
 
-  console.log(`[google-ads-reports] Fetching negative keywords for customer ${cleanCustomerId}`);
+  console.log(`[google - ads - reports] Fetching negative keywords for customer ${cleanCustomerId}`);
 
   const adGroupResponse = await fetch(
     `https://googleads.googleapis.com/${API_VERSION}/customers/${cleanCustomerId}/googleAds:searchStream`,
@@ -875,9 +1159,9 @@ async function fetchNegativeKeywordsWithErrorDetails(
 
   console.log(`[google-ads-reports] negativeKeywords: ${adGroupNegatives.length} ad group level, ${campaignNegatives.length} campaign level`);
 
-  return { 
-    data: [...adGroupNegatives, ...campaignNegatives], 
-    errors 
+  return {
+    data: [...adGroupNegatives, ...campaignNegatives],
+    errors
   };
 }
 
@@ -916,28 +1200,29 @@ serve(async (req) => {
       headers["login-customer-id"] = loginCustomerId.replace(/-/g, "");
     }
 
-    const searchResponse = await fetch(
-      `https://googleads.googleapis.com/${API_VERSION}/customers/${cleanCustomerId}/googleAds:searchStream`,
-      {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ query }),
-      }
-    );
-
-    if (!searchResponse.ok) {
-      const errorText = await searchResponse.text();
-      console.error(`[google-ads-reports] API error (${searchResponse.status}):`, errorText);
-      return new Response(
-        JSON.stringify({ error: `Google Ads API Error (${searchResponse.status}): ${errorText}` }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    let results: any[] = [];
+    if (reportType !== "conversions" && reportType !== "negativeKeywords") {
+      const searchResponse = await fetch(
+        `https://googleads.googleapis.com/${API_VERSION}/customers/${cleanCustomerId}/googleAds:searchStream`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ query }),
+        }
       );
-    }
 
-    const searchData = await searchResponse.json();
-    const results = searchData.reduce((acc: any[], batch: any) => {
-      return acc.concat(batch.results || []);
-    }, []);
+      if (!searchResponse.ok) {
+        const errorText = await searchResponse.text();
+        console.error(`[google-ads-reports] API error (${searchResponse.status}):`, errorText);
+        return new Response(
+          JSON.stringify({ error: `Google Ads API Error (${searchResponse.status}): ${errorText}` }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const searchData = await searchResponse.json();
+      results = searchData.reduce((acc: any[], batch: any) => acc.concat(batch.results || []), []);
+    }
 
     console.log(`[google-ads-reports] Got ${results.length} results for ${reportType}`);
 
@@ -965,13 +1250,21 @@ serve(async (req) => {
         data = transformAds(results);
         break;
       case "audiences":
-        data = transformAudiences(results);
+        const specialAudResult = await fetchAudiencesSpecial(cleanCustomerId, headers, startDate, endDate);
+        data = specialAudResult.data;
+        if (specialAudResult.errors.length > 0) {
+          console.error("[google-ads-reports] Audience errors:", specialAudResult.errors);
+        }
         break;
       case "budgets":
         data = transformBudgets(results);
         break;
       case "conversions":
-        data = transformConversions(results);
+        const specialConvResult = await fetchConversionsSpecial(cleanCustomerId, headers, startDate, endDate);
+        data = specialConvResult.data;
+        if (specialConvResult.errors.length > 0) {
+          console.error("[google-ads-reports] Conversion errors:", specialConvResult.errors);
+        }
         break;
       case "negativeKeywords":
         const negResult = await fetchNegativeKeywordsWithErrorDetails(cleanCustomerId, headers);
