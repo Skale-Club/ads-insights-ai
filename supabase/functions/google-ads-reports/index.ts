@@ -8,7 +8,7 @@ const corsHeaders = {
 
 const API_VERSION = "v20";
 
-type ReportType = "overview" | "campaigns" | "keywords" | "search_terms" | "daily_performance" | "adGroups" | "ads" | "audiences" | "budgets" | "conversions";
+type ReportType = "overview" | "campaigns" | "keywords" | "search_terms" | "daily_performance" | "adGroups" | "ads" | "audiences" | "budgets" | "conversions" | "negativeKeywords";
 
 function buildQuery(reportType: ReportType, startDate: string, endDate: string): string {
   switch (reportType) {
@@ -167,6 +167,20 @@ function buildQuery(reportType: ReportType, startDate: string, endDate: string):
           metrics.clicks
         FROM conversion_action
         WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+      `;
+
+    case "negativeKeywords":
+      return `
+        SELECT
+          ad_group_criterion.criterion_id,
+          ad_group_criterion.keyword.text,
+          ad_group_criterion.keyword.match_type,
+          ad_group_criterion.status,
+          ad_group.name,
+          campaign.name
+        FROM ad_group_criterion
+        WHERE ad_group_criterion.type = 'NEGATIVE_KEYWORD'
+          AND ad_group_criterion.status != 'REMOVED'
       `;
 
     default:
@@ -582,6 +596,23 @@ function transformConversions(results: any[]) {
   }));
 }
 
+function transformNegativeKeywords(results: any[]) {
+  return results.map((row) => {
+    const id = row.adGroupCriterion?.criterionId;
+    const matchType = (row.adGroupCriterion?.keyword?.matchType || "").toLowerCase();
+    const status = (row.adGroupCriterion?.status || "").toLowerCase();
+
+    return {
+      id: String(id),
+      keyword: row.adGroupCriterion?.keyword?.text || "",
+      matchType: matchType === "exact" ? "exact" : matchType === "phrase" ? "phrase" : "broad",
+      status: status === "enabled" ? "enabled" : "paused",
+      adGroup: row.adGroup?.name || "",
+      campaign: row.campaign?.name || "",
+    };
+  });
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -673,6 +704,9 @@ serve(async (req) => {
         break;
       case "conversions":
         data = transformConversions(results);
+        break;
+      case "negativeKeywords":
+        data = transformNegativeKeywords(results);
         break;
       default:
         throw new Error(`Unknown report type: ${reportType}`);
