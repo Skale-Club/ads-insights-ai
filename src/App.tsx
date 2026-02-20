@@ -7,6 +7,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { DashboardProvider } from "@/contexts/DashboardContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { Analytics } from "@vercel/analytics/react";
 
 // Pages
 import LoginPage from "@/pages/Login";
@@ -83,6 +84,7 @@ const App = () => (
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>
+          <Analytics />
         </DashboardProvider>
       </AuthProvider>
     </TooltipProvider>
