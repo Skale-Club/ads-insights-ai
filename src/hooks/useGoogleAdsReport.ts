@@ -7,7 +7,7 @@ import { useToast } from '@/hooks/use-toast';
 import { ToastAction } from '@/components/ui/toast';
 import React from 'react';
 
-type ReportType = 'overview' | 'campaigns' | 'keywords' | 'search_terms' | 'daily_performance' | 'adGroups' | 'ads' | 'audiences' | 'budgets' | 'conversions' | 'negativeKeywords';
+type ReportType = 'overview' | 'campaigns' | 'keywords' | 'search_terms' | 'daily_performance' | 'adGroups' | 'ads' | 'audiences' | 'budgets' | 'conversions' | 'negativeKeywords' | 'demographics_age' | 'demographics_gender' | 'demographics_device' | 'demographics_location';
 
 interface UseGoogleAdsReportOptions {
   usePreviousPeriod?: boolean;

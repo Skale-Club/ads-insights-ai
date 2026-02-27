@@ -104,7 +104,7 @@ export function HeroMetrics() {
   const roas = current?.roas ?? 0;
 
   return (
-    <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
+    <div className="grid gap-4 sm:grid-cols-2">
       <HeroMetric
         title="Total Spend"
         value={formatCurrency(spend)}

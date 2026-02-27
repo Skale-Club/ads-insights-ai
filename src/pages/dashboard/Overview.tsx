@@ -15,27 +15,27 @@
      );
    }
  
-   return (
-     <div className="space-y-8 animate-fade-in">
-       {/* Header */}
-       <div>
-         <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-         <p className="text-muted-foreground">
-           {selectedAccount.name}
-         </p>
-       </div>
- 
-       {/* Hero Metrics - Most Important KPIs */}
-       <HeroMetrics />
- 
-       {/* Quick Insights */}
-       <QuickInsights />
- 
-       {/* Performance Chart */}
-       <PerformanceChart />
- 
-       {/* Top Performers */}
-       <TopPerformers />
-     </div>
-   );
+    return (
+      <div className="space-y-8 animate-fade-in">
+        {/* Header */}
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+          <p className="text-muted-foreground">
+            {selectedAccount.name}
+          </p>
+        </div>
+
+        {/* Hero Metrics + Quick Insights - Side by Side */}
+        <div className="grid gap-4 lg:grid-cols-2">
+          <HeroMetrics />
+          <QuickInsights />
+        </div>
+
+        {/* Performance Chart */}
+        <PerformanceChart />
+
+        {/* Top Performers */}
+        <TopPerformers />
+      </div>
+    );
  }

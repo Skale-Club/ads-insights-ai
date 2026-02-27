@@ -7,16 +7,18 @@ import { Loader2 } from 'lucide-react';
 export default function AuthCallback() {
   const navigate = useNavigate();
   const [status, setStatus] = useState<string>('Processando autenticação...');
-  const [debugInfo, setDebugInfo] = useState<any>({});
+  const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+  const [debugInfo, setDebugInfo] = useState<Record<string, string> | null>(null);
 
   useEffect(() => {
     const handleAuthCallback = async () => {
       // 1. Capture URL params for debug
-      const hash = window.location.hash;
-      const search = window.location.search;
-      setDebugInfo({ hash, search });
-
-      console.log('[AuthCallback] URL:', { hash, search });
+      if (isLocalhost) {
+        const hash = window.location.hash;
+        const search = window.location.search;
+        setDebugInfo({ hash, search });
+        console.log('[AuthCallback] URL:', { hash, search });
+      }
 
       // 2. Check if we have a session
       const { data: { session }, error } = await supabase.auth.getSession();
@@ -58,7 +60,7 @@ export default function AuthCallback() {
     };
 
     handleAuthCallback();
-  }, [navigate]);
+  }, [navigate, isLocalhost]);
 
   return (
     <div className="flex min-h-screen items-center justify-center p-4">
@@ -69,14 +71,16 @@ export default function AuthCallback() {
         <CardContent className="space-y-4">
           <div className="flex items-center space-x-2">
             <Loader2 className="h-4 w-4 animate-spin" />
-            <p>{status}</p>
+          <p>{status}</p>
           </div>
           
+          {isLocalhost && debugInfo && (
           <div className="rounded-md bg-muted p-2 text-xs overflow-auto max-h-40">
             <p className="font-bold">Info de Debug:</p>
             <pre>{JSON.stringify(debugInfo, null, 2)}</pre>
              <p className="mt-2 text-muted-foreground">Verifique o Console (F12) para logs detalhados.</p>
           </div>
+          )}
         </CardContent>
       </Card>
     </div>

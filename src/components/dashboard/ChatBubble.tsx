@@ -11,6 +11,7 @@ import { useGoogleAdsReport } from '@/hooks/useGoogleAdsReport';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ChatSidebar } from './ChatSidebar';
+import { useLocation } from 'react-router-dom';
 
 interface UserAISettings {
   openai_api_key: string | null;
@@ -93,6 +94,97 @@ type SearchTermRow = {
   qualityScore: number | null;
 };
 
+type DailyPerformanceRow = {
+  date: string;
+  conversions: number;
+  spend: number;
+  impressions: number;
+  clicks: number;
+};
+
+type AdGroupRow = {
+  id: string;
+  name: string;
+  campaignName: string;
+  status: string;
+  impressions: number;
+  clicks: number;
+  cost: number;
+  conversions: number;
+  ctr: number;
+  cpa: number;
+};
+
+type AdRow = {
+  id: string;
+  name: string;
+  adGroup: string;
+  campaign: string;
+  type: string;
+  status: string;
+  impressions: number;
+  clicks: number;
+  cost: number;
+  conversions: number;
+  ctr: number;
+};
+
+type AudienceRow = {
+  id: string;
+  name: string;
+  type: string;
+  status: string;
+  reach: number;
+  impressions: number;
+  clicks: number;
+  cost: number;
+  conversions: number;
+  ctr: number;
+  cpa: number;
+};
+
+type BudgetRow = {
+  id: string;
+  name: string;
+  status: string;
+  amount: number;
+  spent: number;
+  campaignsCount: number;
+  remaining: number;
+  utilization: number;
+};
+
+type ConversionRow = {
+  id: string;
+  name: string;
+  category: string;
+  type: string;
+  countingType: string;
+  status: string;
+  primaryForGoal: boolean;
+  campaign?: string;
+  adGroup?: string;
+  conversions: number;
+  allConversions: number;
+  value: number;
+  cost: number;
+  clicks: number;
+  cpa: number;
+  conversionRate: number;
+  roas: number;
+  hasConversions: boolean;
+};
+
+type NegativeKeywordRow = {
+  id: string;
+  keyword: string;
+  matchType: string;
+  status: string;
+  adGroup?: string;
+  campaign?: string;
+  level?: string;
+};
+
 function buildWelcomeMessage(accountName?: string): ChatMsg {
   if (accountName) {
     return {
@@ -129,6 +221,7 @@ function normalizeAssistantMarkdown(content: string): string {
 export function ChatBubble({ campaignContext }: { campaignContext?: ChatCampaignContext }) {
   const { user } = useAuth();
   const { selectedAccount, dateRange, dateRangePreset, setChatWidth } = useDashboard();
+  const location = useLocation();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [windowWidth, setWindowWidth] = useState<number>(() => (typeof window === 'undefined' ? 1024 : window.innerWidth));
@@ -536,9 +629,16 @@ export function ChatBubble({ campaignContext }: { campaignContext?: ChatCampaign
 
   // Fetch context only when the chat is opened (reduces background API calls).
   const { data: overview } = useGoogleAdsReport<OverviewData>('overview', { enabled: open });
+  const { data: dailyPerformance } = useGoogleAdsReport<DailyPerformanceRow[]>('daily_performance', { enabled: open });
   const { data: campaigns } = useGoogleAdsReport<CampaignRow[]>('campaigns', { enabled: open });
+  const { data: adGroups } = useGoogleAdsReport<AdGroupRow[]>('adGroups', { enabled: open });
+  const { data: ads } = useGoogleAdsReport<AdRow[]>('ads', { enabled: open });
   const { data: keywords } = useGoogleAdsReport<KeywordRow[]>('keywords', { enabled: open });
   const { data: searchTerms } = useGoogleAdsReport<SearchTermRow[]>('search_terms', { enabled: open });
+  const { data: audiences } = useGoogleAdsReport<AudienceRow[]>('audiences', { enabled: open });
+  const { data: budgets } = useGoogleAdsReport<BudgetRow[]>('budgets', { enabled: open });
+  const { data: conversions } = useGoogleAdsReport<ConversionRow[]>('conversions', { enabled: open });
+  const { data: negativeKeywords } = useGoogleAdsReport<NegativeKeywordRow[]>('negativeKeywords', { enabled: open });
 
   const builtContext = useMemo(() => {
     if (!selectedAccount) return null;
@@ -550,7 +650,7 @@ export function ChatBubble({ campaignContext }: { campaignContext?: ChatCampaign
     const topCampaigns = (campaigns || [])
       .slice()
       .sort((a, b) => (b.spend || 0) - (a.spend || 0))
-      .slice(0, 10)
+      .slice(0, 20)
       .map((c) => ({
         name: c.name,
         spend: c.spend,
@@ -563,7 +663,7 @@ export function ChatBubble({ campaignContext }: { campaignContext?: ChatCampaign
     const topKeywords = (keywords || [])
       .slice()
       .sort((a, b) => (b.cost || 0) - (a.cost || 0))
-      .slice(0, 15)
+      .slice(0, 25)
       .map((k) => ({
         keyword: k.keyword,
         matchType: k.matchType,
@@ -581,17 +681,205 @@ export function ChatBubble({ campaignContext }: { campaignContext?: ChatCampaign
       .slice(0, 10)
       .map((t) => t.searchTerm);
 
+    const adGroupsSample = (adGroups || [])
+      .slice()
+      .sort((a, b) => (b.cost || 0) - (a.cost || 0))
+      .slice(0, 25)
+      .map((ag) => ({
+        name: ag.name,
+        campaignName: ag.campaignName,
+        status: ag.status,
+        cost: ag.cost,
+        conversions: ag.conversions,
+        ctr: ag.ctr,
+        cpa: ag.cpa,
+      }));
+
+    const adsSample = (ads || [])
+      .slice()
+      .sort((a, b) => (b.cost || 0) - (a.cost || 0))
+      .slice(0, 25)
+      .map((ad) => ({
+        name: ad.name,
+        campaign: ad.campaign,
+        adGroup: ad.adGroup,
+        type: ad.type,
+        status: ad.status,
+        cost: ad.cost,
+        conversions: ad.conversions,
+        ctr: ad.ctr,
+      }));
+
+    const searchTermsSample = (searchTerms || [])
+      .slice()
+      .sort((a, b) => (b.cost || 0) - (a.cost || 0))
+      .slice(0, 50)
+      .map((t) => ({
+        searchTerm: t.searchTerm,
+        matchedKeyword: t.matchedKeyword,
+        matchType: t.matchType,
+        impressions: t.impressions,
+        clicks: t.clicks,
+        cost: t.cost,
+        conversions: t.conversions,
+        ctr: t.ctr,
+        cpa: t.cpa,
+      }));
+
+    const audiencesSample = (audiences || [])
+      .slice()
+      .sort((a, b) => (b.cost || 0) - (a.cost || 0))
+      .slice(0, 20)
+      .map((a) => ({
+        name: a.name,
+        type: a.type,
+        status: a.status,
+        cost: a.cost,
+        conversions: a.conversions,
+        ctr: a.ctr,
+        cpa: a.cpa,
+      }));
+
+    const budgetsSample = (budgets || [])
+      .slice()
+      .sort((a, b) => (b.utilization || 0) - (a.utilization || 0))
+      .slice(0, 20)
+      .map((b) => ({
+        name: b.name,
+        status: b.status,
+        amount: b.amount,
+        spent: b.spent,
+        remaining: b.remaining,
+        utilization: b.utilization,
+        campaignsCount: b.campaignsCount,
+      }));
+
+    const conversionsSample = (conversions || [])
+      .slice()
+      .sort((a, b) => (b.conversions || 0) - (a.conversions || 0))
+      .slice(0, 25)
+      .map((c) => ({
+        name: c.name,
+        category: c.category,
+        type: c.type,
+        status: c.status,
+        primaryForGoal: c.primaryForGoal,
+        conversions: c.conversions,
+        value: c.value,
+        cpa: c.cpa,
+        roas: c.roas,
+      }));
+
+    const negativeKeywordsSample = (negativeKeywords || [])
+      .slice()
+      .sort((a, b) => String(a.keyword || '').localeCompare(String(b.keyword || '')))
+      .slice(0, 120)
+      .map((n) => ({
+        keyword: n.keyword,
+        matchType: n.matchType,
+        level: n.level || 'unknown',
+        campaign: n.campaign || '',
+        adGroup: n.adGroup || '',
+        status: n.status,
+      }));
+
+    const dailyPerformanceRecent = (dailyPerformance || [])
+      .slice()
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .slice(-30)
+      .map((d) => ({
+        date: d.date,
+        spend: d.spend,
+        clicks: d.clicks,
+        impressions: d.impressions,
+        conversions: d.conversions,
+      }));
+
+    const searchTermsSummary = (searchTerms || []).reduce(
+      (acc, t) => {
+        const spend = t.cost || 0;
+        const conv = t.conversions || 0;
+
+        acc.totalTerms += 1;
+        acc.totalSpend += spend;
+        acc.totalConversions += conv;
+
+        if (conv > 0) {
+          acc.termsWithConversions += 1;
+        } else {
+          acc.termsWithoutConversions += 1;
+          acc.spendWithoutConversions += spend;
+        }
+
+        return acc;
+      },
+      {
+        totalTerms: 0,
+        termsWithConversions: 0,
+        termsWithoutConversions: 0,
+        totalSpend: 0,
+        totalConversions: 0,
+        spendWithoutConversions: 0,
+      },
+    );
+
+    const currentSection = location.pathname.startsWith('/dashboard/')
+      ? (location.pathname.replace('/dashboard/', '') || 'overview')
+      : location.pathname;
+
     return {
       accountName: selectedAccount.name,
       accountId: selectedAccount.id,
       currencyCode: selectedAccount.currencyCode,
+      uiContext: {
+        currentPath: location.pathname,
+        currentSection,
+        dateRangePreset,
+      },
       dateRange: dateLabel,
+      dataCoverage: {
+        campaigns: campaigns?.length || 0,
+        adGroups: adGroups?.length || 0,
+        ads: ads?.length || 0,
+        keywords: keywords?.length || 0,
+        searchTerms: searchTerms?.length || 0,
+        audiences: audiences?.length || 0,
+        budgets: budgets?.length || 0,
+        conversions: conversions?.length || 0,
+        negativeKeywords: negativeKeywords?.length || 0,
+        dailyPerformanceDays: dailyPerformance?.length || 0,
+      },
       overallMetrics: overview || null,
+      dailyPerformance: dailyPerformanceRecent,
       campaigns: topCampaigns,
+      adGroups: adGroupsSample,
+      ads: adsSample,
       topKeywords,
+      searchTermsSummary,
+      searchTerms: searchTermsSample,
+      audiences: audiencesSample,
+      budgets: budgetsSample,
+      conversions: conversionsSample,
+      existingNegativeKeywords: negativeKeywordsSample,
       negativeKeywordSuggestions: negCandidates,
     };
-  }, [selectedAccount, dateRange, dateRangePreset, overview, campaigns, keywords, searchTerms]);
+  }, [
+    selectedAccount,
+    dateRange,
+    dateRangePreset,
+    location.pathname,
+    overview,
+    dailyPerformance,
+    campaigns,
+    adGroups,
+    ads,
+    keywords,
+    searchTerms,
+    audiences,
+    budgets,
+    conversions,
+    negativeKeywords,
+  ]);
 
   const effectiveContext = campaignContext ?? builtContext;
 

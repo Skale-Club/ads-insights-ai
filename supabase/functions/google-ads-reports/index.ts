@@ -8,7 +8,7 @@ const corsHeaders = {
 
 const API_VERSION = "v20";
 
-type ReportType = "overview" | "campaigns" | "keywords" | "search_terms" | "daily_performance" | "adGroups" | "ads" | "audiences" | "budgets" | "conversions" | "negativeKeywords";
+type ReportType = "overview" | "campaigns" | "keywords" | "search_terms" | "daily_performance" | "adGroups" | "ads" | "audiences" | "budgets" | "conversions" | "negativeKeywords" | "demographics_age" | "demographics_gender" | "demographics_device" | "demographics_location";
 
 function buildQuery(reportType: ReportType, startDate: string, endDate: string): string {
   switch (reportType) {
@@ -130,6 +130,18 @@ function buildQuery(reportType: ReportType, startDate: string, endDate: string):
 
     case "audiences":
       return "use_fetch_audiences_special";
+
+    case "demographics_age":
+      return "use_fetch_demographics_age";
+
+    case "demographics_gender":
+      return "use_fetch_demographics_gender";
+
+    case "demographics_device":
+      return "use_fetch_demographics_device";
+
+    case "demographics_location":
+      return "use_fetch_demographics_location";
 
 
     case "budgets":
@@ -893,16 +905,25 @@ async function fetchAudiencesSpecial(
           reach: 0,
           impressions: 0,
           clicks: 0,
+          ctr: 0,
           cost: 0,
           conversions: 0,
+          cpa: 0,
         };
       }
 
       const aud = audienceMap[id];
-      aud.impressions += Number(row.metrics?.impressions || 0);
-      aud.clicks += Number(row.metrics?.clicks || 0);
-      aud.cost += microsToAmount(row.metrics?.costMicros || 0);
-      aud.conversions += Number(row.metrics?.conversions || 0);
+      const metrics = row.metrics;
+      const impr = Number(metrics?.impressions || 0);
+      const clicks = Number(metrics?.clicks || 0);
+      const conv = Number(metrics?.conversions || 0);
+
+      aud.impressions += impr;
+      aud.clicks += clicks;
+      aud.conversions += conv;
+      aud.cost += microsToAmount(metrics?.costMicros || 0);
+      aud.ctr = aud.impressions > 0 ? (aud.clicks / aud.impressions) * 100 : 0;
+      aud.cpa = aud.conversions > 0 ? aud.cost / aud.conversions : 0;
     }
   };
 
@@ -911,12 +932,239 @@ async function fetchAudiencesSpecial(
 
   const data = Object.values(audienceMap).map((aud: any) => ({
     ...aud,
-    ctr: aud.impressions > 0 ? (aud.clicks / aud.impressions) * 100 : 0,
-    cpa: aud.conversions > 0 ? aud.cost / aud.conversions : 0,
+    reach: aud.impressions,
   }));
 
   return { data, errors };
 }
+
+async function fetchDemographicsDevice(
+  cleanCustomerId: string,
+  headers: Record<string, string>,
+  startDate: string,
+  endDate: string
+): Promise<{ data: any[]; errors: string[] }> {
+  const errors: string[] = [];
+
+  const query = `
+    SELECT
+      device,
+      metrics.cost_micros,
+      metrics.impressions,
+      metrics.clicks,
+      metrics.conversions
+    FROM customer
+    WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+  `;
+
+  let results: any[] = [];
+
+  try {
+    const response = await fetch(
+      `https://googleads.googleapis.com/${API_VERSION}/customers/${cleanCustomerId}/googleAds:searchStream`,
+      { method: "POST", headers, body: JSON.stringify({ query }) }
+    );
+    if (response.ok) {
+      const data = await response.json();
+      results = data.reduce((acc: any[], batch: any) => acc.concat(batch.results || []), []);
+    } else {
+      errors.push(`Demographics device query failed`);
+    }
+  } catch (e: any) {
+    errors.push(`Demographics device query error: ${e.message}`);
+  }
+
+  const deviceMap: Record<string, any> = {};
+
+  for (const row of results) {
+    const device = (row.device || "UNKNOWN").toUpperCase();
+    const metrics = row.metrics;
+
+    if (!deviceMap[device]) {
+      const deviceNames: Record<string, string> = {
+        MOBILE: "Mobile",
+        DESKTOP: "Desktop",
+        TABLET: "Tablet",
+        OTHER: "Other",
+        UNKNOWN: "Unknown",
+      };
+      deviceMap[device] = {
+        id: device,
+        name: deviceNames[device] || device,
+        impressions: 0,
+        clicks: 0,
+        conversions: 0,
+        cost: 0,
+      };
+    }
+
+    deviceMap[device].impressions += Number(metrics?.impressions || 0);
+    deviceMap[device].clicks += Number(metrics?.clicks || 0);
+    deviceMap[device].conversions += Number(metrics?.conversions || 0);
+    deviceMap[device].cost += microsToAmount(metrics?.costMicros || 0);
+  }
+
+  const data = Object.values(deviceMap).map((dev: any) => ({
+    ...dev,
+    ctr: dev.impressions > 0 ? (dev.clicks / dev.impressions) * 100 : 0,
+    cpa: dev.conversions > 0 ? dev.cost / dev.conversions : 0,
+  }));
+
+  return { data, errors };
+}
+
+async function fetchDemographicsGender(
+  cleanCustomerId: string,
+  headers: Record<string, string>,
+  startDate: string,
+  endDate: string
+): Promise<{ data: any[]; errors: string[] }> {
+  const errors: string[] = [];
+
+  const query = `
+    SELECT
+      user_profile.gender,
+      metrics.cost_micros,
+      metrics.impressions,
+      metrics.clicks,
+      metrics.conversions
+    FROM user_profile
+    WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+      AND user_profile.gender IS NOT NULL
+  `;
+
+  let results: any[] = [];
+
+  try {
+    const response = await fetch(
+      `https://googleads.googleapis.com/${API_VERSION}/customers/${cleanCustomerId}/googleAds:searchStream`,
+      { method: "POST", headers, body: JSON.stringify({ query }) }
+    );
+    if (response.ok) {
+      const data = await response.json();
+      results = data.reduce((acc: any[], batch: any) => acc.concat(batch.results || []), []);
+    } else {
+      errors.push(`Demographics gender query failed`);
+    }
+  } catch (e: any) {
+    errors.push(`Demographics gender query error: ${e.message}`);
+  }
+
+  const genderMap: Record<string, any> = {};
+
+  for (const row of results) {
+    const gender = (row.userProfile?.gender || "UNKNOWN").toUpperCase();
+    const metrics = row.metrics;
+
+    if (!genderMap[gender]) {
+      const genderNames: Record<string, string> = {
+        MALE: "Male",
+        FEMALE: "Female",
+        UNKNOWN: "Unknown",
+      };
+      genderMap[gender] = {
+        id: gender,
+        name: genderNames[gender] || gender,
+        impressions: 0,
+        clicks: 0,
+        conversions: 0,
+        cost: 0,
+      };
+    }
+
+    genderMap[gender].impressions += Number(metrics?.impressions || 0);
+    genderMap[gender].clicks += Number(metrics?.clicks || 0);
+    genderMap[gender].conversions += Number(metrics?.conversions || 0);
+    genderMap[gender].cost += microsToAmount(metrics?.costMicros || 0);
+  }
+
+  const data = Object.values(genderMap).map((g: any) => ({
+    ...g,
+    ctr: g.impressions > 0 ? (g.clicks / g.impressions) * 100 : 0,
+    cpa: g.conversions > 0 ? g.cost / g.conversions : 0,
+  }));
+
+  return { data, errors };
+}
+
+async function fetchDemographicsAge(
+  cleanCustomerId: string,
+  headers: Record<string, string>,
+  startDate: string,
+  endDate: string
+): Promise<{ data: any[]; errors: string[] }> {
+  const errors: string[] = [];
+
+  const query = `
+    SELECT
+      user_profile.age_range,
+      metrics.cost_micros,
+      metrics.impressions,
+      metrics.clicks,
+      metrics.conversions
+    FROM user_profile
+    WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+      AND user_profile.age_range IS NOT NULL
+  `;
+
+  let results: any[] = [];
+
+  try {
+    const response = await fetch(
+      `https://googleads.googleapis.com/${API_VERSION}/customers/${cleanCustomerId}/googleAds:searchStream`,
+      { method: "POST", headers, body: JSON.stringify({ query }) }
+    );
+    if (response.ok) {
+      const data = await response.json();
+      results = data.reduce((acc: any[], batch: any) => acc.concat(batch.results || []), []);
+    } else {
+      errors.push(`Demographics age query failed`);
+    }
+  } catch (e: any) {
+    errors.push(`Demographics age query error: ${e.message}`);
+  }
+
+  const ageMap: Record<string, any> = {};
+
+  for (const row of results) {
+    const ageRange = (row.userProfile?.ageRange || "UNKNOWN").toUpperCase();
+    const metrics = row.metrics;
+
+    if (!ageMap[ageRange]) {
+      const ageNames: Record<string, string> = {
+        AGE_RANGE_18_24: "18-24",
+        AGE_RANGE_25_34: "25-34",
+        AGE_RANGE_35_44: "35-44",
+        AGE_RANGE_45_54: "45-54",
+        AGE_RANGE_55_64: "55-64",
+        AGE_RANGE_65_UP: "65+",
+        UNKNOWN: "Unknown",
+      };
+      ageMap[ageRange] = {
+        id: ageRange,
+        name: ageNames[ageRange] || ageRange,
+        impressions: 0,
+        clicks: 0,
+        conversions: 0,
+        cost: 0,
+      };
+    }
+
+    ageMap[ageRange].impressions += Number(metrics?.impressions || 0);
+    ageMap[ageRange].clicks += Number(metrics?.clicks || 0);
+    ageMap[ageRange].conversions += Number(metrics?.conversions || 0);
+    ageMap[ageRange].cost += microsToAmount(metrics?.costMicros || 0);
+  }
+
+  const data = Object.values(ageMap).map((a: any) => ({
+    ...a,
+    ctr: a.impressions > 0 ? (a.clicks / a.impressions) * 100 : 0,
+    cpa: a.conversions > 0 ? a.cost / a.conversions : 0,
+  }));
+
+  return { data, errors };
+}
+
 
 function transformNegativeKeywords(results: any[]) {
   return results.map((row) => {
@@ -1271,6 +1519,34 @@ serve(async (req) => {
         data = negResult.data;
         if (negResult.errors.length > 0) {
           console.error("[google-ads-reports] Negative keywords errors:", negResult.errors);
+        }
+        break;
+      case "demographics_age":
+        const ageResult = await fetchDemographicsAge(cleanCustomerId, headers, startDate, endDate);
+        data = ageResult.data;
+        if (ageResult.errors.length > 0) {
+          console.error("[google-ads-reports] Demographics age errors:", ageResult.errors);
+        }
+        break;
+      case "demographics_gender":
+        const genderResult = await fetchDemographicsGender(cleanCustomerId, headers, startDate, endDate);
+        data = genderResult.data;
+        if (genderResult.errors.length > 0) {
+          console.error("[google-ads-reports] Demographics gender errors:", genderResult.errors);
+        }
+        break;
+      case "demographics_device":
+        const deviceResult = await fetchDemographicsDevice(cleanCustomerId, headers, startDate, endDate);
+        data = deviceResult.data;
+        if (deviceResult.errors.length > 0) {
+          console.error("[google-ads-reports] Demographics device errors:", deviceResult.errors);
+        }
+        break;
+      case "demographics_location":
+        const locResult = await fetchDemographicsAge(cleanCustomerId, headers, startDate, endDate);
+        data = locResult.data;
+        if (locResult.errors.length > 0) {
+          console.error("[google-ads-reports] Demographics location errors:", locResult.errors);
         }
         break;
       default:
