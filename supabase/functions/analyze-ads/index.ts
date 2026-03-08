@@ -164,13 +164,64 @@ serve(async (req) => {
       ? messages
         .filter((m: any) =>
           m &&
-          (m.role === "user" || m.role === "assistant") &&
-          typeof m.content === "string"
+          (m.role === "user" || m.role === "assistant")
         )
-        .map((m: any) => ({
-          role: m.role === "assistant" ? "model" : "user",
-          parts: [{ text: m.content }],
-        }))
+        .map((m: any) => {
+          const role = m.role === "assistant" ? "model" : "user";
+
+          // Handle multimodal content (images)
+          if (m.attachments && Array.isArray(m.attachments) && m.attachments.length > 0) {
+            const parts: any[] = [];
+
+            // Add text content first
+            if (typeof m.content === "string" && m.content.trim()) {
+              parts.push({ text: m.content });
+            }
+
+            // Add image parts
+            for (const att of m.attachments) {
+              if (att.type === "image" && att.data) {
+                parts.push({
+                  inline_data: {
+                    mime_type: att.mimeType || "image/jpeg",
+                    data: att.data,
+                  },
+                });
+              }
+            }
+
+            // Add spreadsheet data as text
+            for (const att of m.attachments) {
+              if ((att.type === "csv" || att.type === "excel") && att.data) {
+                parts.push({
+                  text: `\n\n[File: ${att.name}]\n${att.data}`
+                });
+              }
+            }
+
+            // Add audio transcription
+            for (const att of m.attachments) {
+              if (att.type === "audio" && att.transcription) {
+                parts.push({
+                  text: `\n\n[Audio transcription: ${att.transcription}]`
+                });
+              }
+            }
+
+            return { role, parts };
+          }
+
+          // Standard text-only message
+          if (typeof m.content === "string") {
+            return {
+              role,
+              parts: [{ text: m.content }],
+            };
+          }
+
+          return null;
+        })
+        .filter((m: any) => m !== null)
       : [];
 
     const url =
@@ -274,11 +325,30 @@ serve(async (req) => {
               try {
                 const parsed = JSON.parse(payload);
                 const parts = parsed?.candidates?.[0]?.content?.parts;
-                const text = Array.isArray(parts)
-                  ? parts.map((p: any) => (typeof p?.text === "string" ? p.text : "")).join("")
-                  : "";
 
-                if (text) emit(text);
+                if (Array.isArray(parts)) {
+                  for (const part of parts) {
+                    if (part.text) {
+                      emit(part.text);
+                    }
+                    if (part.functionCall) {
+                      controller.enqueue(
+                        encoder.encode(`data: ${JSON.stringify({
+                          choices: [{
+                            delta: {
+                              tool_calls: [{
+                                function: {
+                                  name: part.functionCall.name,
+                                  arguments: JSON.stringify(part.functionCall.args)
+                                }
+                              }]
+                            }
+                          }]
+                        })}\n\n`),
+                      );
+                    }
+                  }
+                }
               } catch {
                 // Ignore partial/malformed chunk.
               }

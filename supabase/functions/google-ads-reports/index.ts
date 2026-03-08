@@ -8,7 +8,7 @@ const corsHeaders = {
 
 const API_VERSION = "v20";
 
-type ReportType = "overview" | "campaigns" | "keywords" | "search_terms" | "daily_performance" | "adGroups" | "ads" | "audiences" | "budgets" | "conversions" | "negativeKeywords" | "demographics_age" | "demographics_gender" | "demographics_device" | "demographics_location";
+type ReportType = "overview" | "campaigns" | "keywords" | "search_terms" | "searchTerms" | "daily_performance" | "adGroups" | "ads" | "audiences" | "budgets" | "conversions" | "negativeKeywords" | "demographics_age" | "demographics_gender" | "demographics_device" | "demographics_location";
 
 function buildQuery(reportType: ReportType, startDate: string, endDate: string): string {
   switch (reportType) {
@@ -77,6 +77,7 @@ function buildQuery(reportType: ReportType, startDate: string, endDate: string):
       `;
 
     case "search_terms":
+    case "searchTerms":
       return `
         SELECT
           search_term_view.search_term,
@@ -1489,6 +1490,7 @@ serve(async (req) => {
         data = transformKeywords(results);
         break;
       case "search_terms":
+      case "searchTerms":
         data = transformSearchTerms(results);
         break;
       case "adGroups":

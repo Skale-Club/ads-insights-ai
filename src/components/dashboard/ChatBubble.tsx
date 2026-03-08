@@ -11,6 +11,7 @@ import { useGoogleAdsReport } from '@/hooks/useGoogleAdsReport';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ChatSidebar } from './ChatSidebar';
+import { ChatAttachments, AttachmentPreview, ChatAttachment } from './ChatAttachments';
 import { useLocation } from 'react-router-dom';
 
 interface UserAISettings {
@@ -37,6 +38,7 @@ type ChatMsg = {
   role: 'user' | 'assistant';
   content: string;
   created_at?: string;
+  attachments?: ChatAttachment[];
 };
 
 type OverviewData = {
@@ -256,6 +258,8 @@ export function ChatBubble({ campaignContext }: { campaignContext?: ChatCampaign
   const [chatInput, setChatInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [aiSettings, setAiSettings] = useState<{ apiKey: string | null; model: string } | null>(null);
+  const [pendingAttachments, setPendingAttachments] = useState<ChatAttachment[]>([]);
+  const [isProcessingAttachment, setIsProcessingAttachment] = useState(false);
 
   // New state for sidebar
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -942,8 +946,36 @@ export function ChatBubble({ campaignContext }: { campaignContext?: ChatCampaign
     return resp.body;
   };
 
+  const processAudioTranscription = async (attachment: ChatAttachment): Promise<string> => {
+    try {
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/process-attachment`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({
+          type: 'audio',
+          data: attachment.data,
+          mimeType: attachment.mimeType,
+          apiKey: aiSettings?.apiKey,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to transcribe audio');
+      }
+
+      const result = await response.json();
+      return result.transcription || '';
+    } catch (error) {
+      console.error('Audio transcription error:', error);
+      return '[Audio transcription failed]';
+    }
+  };
+
   const handleSendMessage = async () => {
-    if (!chatInput.trim()) return;
+    if (!chatInput.trim() && pendingAttachments.length === 0) return;
 
     console.log('handleSendMessage called. Current sessionId:', sessionId);
 
@@ -973,10 +1005,40 @@ export function ChatBubble({ campaignContext }: { campaignContext?: ChatCampaign
     abortControllerRef.current = abortController;
 
     const userMessageContent = chatInput.trim();
+    const attachmentsToSend = [...pendingAttachments];
     setChatInput('');
+    setPendingAttachments([]);
+    setIsProcessingAttachment(true);
+
+    // Process audio transcriptions
+    const processedAttachments = await Promise.all(
+      attachmentsToSend.map(async (att) => {
+        if (att.type === 'audio') {
+          const transcription = await processAudioTranscription(att);
+          return { ...att, transcription };
+        }
+        return att;
+      })
+    );
+    setIsProcessingAttachment(false);
+
+    // Build message content with attachment context
+    let fullContent = userMessageContent;
+    for (const att of processedAttachments) {
+      if (att.type === 'audio' && att.transcription) {
+        fullContent += `\n\n[Audio message: ${att.transcription}]`;
+      }
+      if (att.type === 'csv' || att.type === 'excel') {
+        fullContent += `\n\n[Uploaded file: ${att.name}]\n${att.data}`;
+      }
+    }
 
     // Optimistic update
-    const newMessages: ChatMsg[] = [...chatMessages, { role: 'user', content: userMessageContent }];
+    const newMessages: ChatMsg[] = [...chatMessages, {
+      role: 'user',
+      content: userMessageContent,
+      attachments: processedAttachments.length > 0 ? processedAttachments : undefined,
+    }];
     setChatMessages(newMessages);
     setIsTyping(true);
 
@@ -985,7 +1047,7 @@ export function ChatBubble({ campaignContext }: { campaignContext?: ChatCampaign
       let currentSessionId = sessionId;
       if (!currentSessionId) {
         // Generate a descriptive title from the first message
-        const initialTitle = generateChatTitle(userMessageContent);
+        const initialTitle = generateChatTitle(userMessageContent || 'File attachment');
 
         const { data: newSession } = await (supabase as any)
           .from('chat_sessions')
@@ -1010,7 +1072,7 @@ export function ChatBubble({ campaignContext }: { campaignContext?: ChatCampaign
         await (supabase as any).from('chat_messages').insert({
           session_id: currentSessionId,
           role: 'user',
-          content: userMessageContent,
+          content: fullContent,
         });
       }
 
@@ -1185,7 +1247,16 @@ export function ChatBubble({ campaignContext }: { campaignContext?: ChatCampaign
                 </ReactMarkdown>
               </div>
             ) : (
-              msg.content
+              <>
+                {msg.attachments && msg.attachments.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {msg.attachments.map((att) => (
+                      <AttachmentPreview key={att.id} attachment={att} />
+                    ))}
+                  </div>
+                )}
+                {msg.content}
+              </>
             )}
           </div>
         </div>
@@ -1348,18 +1419,28 @@ export function ChatBubble({ campaignContext }: { campaignContext?: ChatCampaign
                     e.preventDefault();
                     handleSendMessage();
                   }}
-                  className="flex gap-2"
+                  className="flex flex-col gap-2"
                 >
-                  <Input
-                    value={chatInput}
-                    onChange={(e) => setChatInput(e.target.value)}
-                    placeholder="Ask about your campaign performance..."
-                    disabled={!canChat || isTyping}
-                    className="flex-1"
-                  />
-                  <Button type="submit" disabled={!canChat || isTyping || !chatInput.trim()}>
-                    <Send className="h-4 w-4" />
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <ChatAttachments
+                      attachments={pendingAttachments}
+                      onAddAttachment={(att) => setPendingAttachments((prev) => [...prev, att])}
+                      onRemoveAttachment={(id) => setPendingAttachments((prev) => prev.filter((a) => a.id !== id))}
+                      disabled={!canChat || isTyping || isProcessingAttachment}
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Input
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      placeholder="Ask about your campaign performance..."
+                      disabled={!canChat || isTyping || isProcessingAttachment}
+                      className="flex-1"
+                    />
+                    <Button type="submit" disabled={!canChat || isTyping || isProcessingAttachment || (!chatInput.trim() && pendingAttachments.length === 0)}>
+                      {isProcessingAttachment ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                    </Button>
+                  </div>
                 </form>
               </div>
             </div>
