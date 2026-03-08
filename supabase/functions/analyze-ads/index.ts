@@ -6,13 +6,112 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+const toolDefinitions = [
+  {
+    name: "addNegativeKeyword",
+    description: "Add a negative keyword to a campaign or ad group to prevent ads from showing on specific searches. Use this when you identify wasteful search terms.",
+    parameters: {
+      type: "object",
+      properties: {
+        keyword: { type: "string", description: "The negative keyword to add" },
+        matchType: { type: "string", enum: ["broad", "phrase", "exact"], description: "Match type for the negative keyword" },
+        level: { type: "string", enum: ["campaign", "adGroup"], description: "Level to add the negative keyword at" },
+        campaignId: { type: "string", description: "Campaign ID to add the negative keyword to" },
+        adGroupId: { type: "string", description: "Ad Group ID (required if level is adGroup)" },
+      },
+      required: ["keyword", "matchType", "level", "campaignId"],
+    },
+  },
+  {
+    name: "adjustBid",
+    description: "Adjust bids for a campaign, ad group, or keyword. Use this to optimize spend based on performance.",
+    parameters: {
+      type: "object",
+      properties: {
+        campaignId: { type: "string", description: "Campaign ID to adjust bids for" },
+        adGroupId: { type: "string", description: "Ad Group ID to adjust bids for" },
+        keywordId: { type: "string", description: "Keyword ID to adjust bid for" },
+        bidType: { type: "string", enum: ["cpc", "cpm", "targetCpa", "targetRoas"], description: "Type of bid to adjust" },
+        newBid: { type: "number", description: "New bid amount in account currency" },
+        reason: { type: "string", description: "Reason for the bid adjustment" },
+      },
+      required: ["bidType", "newBid", "reason"],
+    },
+  },
+  {
+    name: "pauseCampaign",
+    description: "Pause a running campaign. Use this for campaigns that are underperforming or wasting budget.",
+    parameters: {
+      type: "object",
+      properties: {
+        campaignId: { type: "string", description: "Campaign ID to pause" },
+        reason: { type: "string", description: "Reason for pausing the campaign" },
+      },
+      required: ["campaignId", "reason"],
+    },
+  },
+  {
+    name: "enableCampaign",
+    description: "Enable a paused campaign. Use this to resume previously paused campaigns.",
+    parameters: {
+      type: "object",
+      properties: {
+        campaignId: { type: "string", description: "Campaign ID to enable" },
+        reason: { type: "string", description: "Reason for enabling the campaign" },
+      },
+      required: ["campaignId", "reason"],
+    },
+  },
+  {
+    name: "createBudget",
+    description: "Create a new campaign budget. Use this when setting up new budget allocations.",
+    parameters: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Name for the budget" },
+        amountMicros: { type: "number", description: "Budget amount in micros (1 USD = 1,000,000 micros)" },
+        deliveryMethod: { type: "string", enum: ["STANDARD", "ACCELERATED"], description: "Budget delivery method" },
+      },
+      required: ["name", "amountMicros"],
+    },
+  },
+  {
+    name: "updateCampaignBudget",
+    description: "Update the daily budget for a campaign. Use this to increase or decrease budget allocation.",
+    parameters: {
+      type: "object",
+      properties: {
+        campaignId: { type: "string", description: "Campaign ID to update budget for" },
+        newBudgetAmountMicros: { type: "number", description: "New budget amount in micros" },
+        reason: { type: "string", description: "Reason for the budget change" },
+      },
+      required: ["campaignId", "newBudgetAmountMicros", "reason"],
+    },
+  },
+  {
+    name: "queryAdsData",
+    description: "Query Google Ads data with specific filters. Use this to fetch additional data not in the current context.",
+    parameters: {
+      type: "object",
+      properties: {
+        reportType: { type: "string", enum: ["campaigns", "adGroups", "ads", "keywords", "searchTerms", "audiences", "budgets", "conversions"], description: "Type of report to query" },
+        startDate: { type: "string", description: "Start date in YYYY-MM-DD format" },
+        endDate: { type: "string", description: "End date in YYYY-MM-DD format" },
+        filters: { type: "array", items: { type: "object" }, description: "Filters to apply to the query" },
+        limit: { type: "number", description: "Maximum number of results to return" },
+      },
+      required: ["reportType", "startDate", "endDate"],
+    },
+  },
+];
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { messages, campaignData, apiKey, model } = await req.json();
+    const { messages, campaignData, apiKey, model, enableTools = true } = await req.json();
 
     if (!apiKey) {
       return new Response(
@@ -25,27 +124,37 @@ serve(async (req) => {
 
     const systemPrompt =
       `You are an expert Google Ads analyst embedded directly within the user's dashboard. Your primary goal is to **analyze internal client data** and **propose actionable improvements**.\n\n` +
-      `Create a distinct section for "Detailed Analysis" and "Key Recommendations".` +
+      `Create a distinct section for "Detailed Analysis" and "Key Recommendations".\n\n` +
       `## Golden Rules\n` +
       `1. **Context Aware**: You always have access to the dashboard context sent in campaignData (overview, trends, campaigns, ad groups, ads, keywords, search terms, audiences, budgets, conversions, negatives, and current page). **Never** ask for data that is already provided in the context.\n` +
       `2. **Proactive Analysis**: Don't just answer questions. If you see a high CPA or low CTR in the context, point it out.\n` +
       `3. **No Walls of Text**: BREAK DOWN your responses. Paragraphs should be max 2-3 lines. Use bullet points liberally.\n` +
       `4. **Fragmented Delivery**: If you have a lot to say, structure it with clear headers and short sections. \n` +
       `5. **Internal References**: When mentioning a campaign or keyword, use its exact name so the user can find it.\n` +
-      `6. **Memory**: Remember previous turns in the conversation. If the user says "refine that", know what "that" refers to.\n\n` +
+      `6. **Memory**: Remember previous turns in the conversation. If the user says "refine that", know what "that" refers to.\n` +
+      `7. **Action Oriented**: When you identify an optimization opportunity, USE THE TOOLS to take action. Don't just suggest - execute when appropriate.\n\n` +
       `## Analysis Skills\n` +
       `### Metric Correlation\n` +
       `- LOOK FOR: Increased CPA vs Decreased CTR (Ad fatigue?), High Spend vs Zero Conversions (Wasted budget).\n` +
       `### Budget Optimization\n` +
       `- CHECK: Keywords with spend > $50 and 0 conversions. High performing campaigns limited by budget (high ROAS).\n` +
+      `- ACTION: Use adjustBid to reduce bids on underperforming keywords, or pauseCampaign for severely underperforming campaigns.\n` +
       `### Search Term Mining\n` +
       `- SCAN: Search terms in the context. Flag irrelevant ones as negative keyword suggestions.\n` +
+      `- ACTION: Use addNegativeKeyword to immediately add wasteful search terms as negatives.\n` +
       `- If "searchTerms" exists in campaignData, treat it as the available raw query list for this request and do not claim you lack access to search terms.\n\n` +
       `### Cross-Page Analysis\n` +
       `- Use uiContext.currentSection to prioritize what the user is looking at now, but cross-check with all other sections before giving final recommendations.\n\n` +
+      `## When to Use Tools\n` +
+      `- **addNegativeKeyword**: When you find search terms with high clicks/spend and no conversions\n` +
+      `- **adjustBid**: When a keyword/campaign has poor ROAS or could benefit from increased investment\n` +
+      `- **pauseCampaign**: When a campaign is severely underperforming and wasting budget\n` +
+      `- **enableCampaign**: When conditions are right to resume a previously paused campaign\n` +
+      `- **updateCampaignBudget**: When a campaign needs more budget (high ROAS) or less (low ROAS)\n\n` +
       `## Interaction Style\n` +
       `- Tone: Professional, analytical, encouraging, but direct about performance issues.\n` +
-      `- Formatting: Use Markdown tables for comparing metrics. Use code blocks for negative keyword lists.\n\n` +
+      `- Formatting: Use Markdown tables for comparing metrics. Use code blocks for negative keyword lists.\n` +
+      `- When taking an action, clearly state what you're doing and why before calling the tool.\n\n` +
       `Current campaign context:\n` +
       `${campaignData ? JSON.stringify(campaignData, null, 2) : "No specific campaign data provided. Use general best practices."}\n\n` +
       `Format your responses in a clear, structured way. Use bullet points for lists and bold text for important metrics. REMEMBER: Short paragraphs. No giant blocks of text.`;
@@ -68,13 +177,19 @@ serve(async (req) => {
       `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModel)}` +
       `:streamGenerateContent?alt=sse&key=${encodeURIComponent(String(apiKey))}`;
 
+    const requestBody: Record<string, unknown> = {
+      systemInstruction: { parts: [{ text: systemPrompt }] },
+      contents,
+    };
+
+    if (enableTools) {
+      requestBody.tools = [{ functionDeclarations: toolDefinitions }];
+    }
+
     const upstream = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        contents,
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!upstream.ok) {
