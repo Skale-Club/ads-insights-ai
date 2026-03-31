@@ -55,7 +55,8 @@
 4. User can configure alert thresholds (budget % threshold, quality score minimum)
 5. Alerts appear in-app with appropriate severity indicators
 
-**Plans:** TBD
+**Plans:** 1 plan
+- [ ] phase-2-01-PLAN.md — Alert types, AlertSystem component, AlertSettings, TopBar bell icon
 
 **UI hint:** yes
 
