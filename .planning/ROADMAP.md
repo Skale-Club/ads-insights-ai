@@ -23,7 +23,8 @@
 3. Location demographics tab shows geographic performance data
 4. All three tabs handle loading and error states properly
 
-**Plans:** TBD
+**Plans:** 1 plan
+- [ ] phase-5-01-PLAN.md — Fix Audiences page (audiences, devices, locations data fetching)
 
 ---
 
@@ -32,4 +33,4 @@
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 1-4 | v1.0 MVP | 4/4 | Complete | 2026-03-31 |
-| 5 | v1.1 | 0/1 | Not started | - |
+| 5 | v1.1 | 1/1 | In Progress | - |

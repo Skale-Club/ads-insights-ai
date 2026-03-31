@@ -21,7 +21,7 @@ See: .planning/PROJECT.md (v1.1 active)
 | Phase | 5 (Audiences Fix) |
 | Plan | Planning |
 | Status | In Progress |
-| Progress | 0% (0/1 plans) |
+| Progress | 1/1 plan (100%) |
 
 ---
 
@@ -44,4 +44,4 @@ See: .planning/PROJECT.md (v1.1 active)
 
 ## Next Steps
 
-Run `/gsd-plan-phase 5` to create execution plan
+Execute: `/gsd-execute-phase 5`
