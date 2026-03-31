@@ -6,62 +6,32 @@
 
 ## Project Reference
 
+See: .planning/PROJECT.md (updated after v1.0)
+
 **Core Value:** Enable marketers to quickly understand their Google Ads performance and get AI-driven recommendations to optimize campaigns — without leaving the dashboard.
 
-**Current Focus:** All phases complete
+**Current Focus:** v1.0 MVP shipped, ready for next milestone
 
 ---
 
-## Current Position
+## Milestone Status
 
-| Attribute | Value |
-|-----------|-------|
-| Phase | 4 (Complete) |
-| Plan | All complete |
-| Status | Done |
-| Progress | 100% (4/4 phases) |
+| Milestone | Status | Phases | Date |
+|-----------|--------|--------|------|
+| v1.0 MVP | ✅ Complete | 4 | 2026-03-31 |
 
 ---
 
-## Roadmap Overview
+## v1.0 Accomplishments
 
-| Phase | Name | Status |
-|-------|------|--------|
-| 1 | Foundation & Reliability | Complete |
-| 2 | Alerting & Monitoring | Complete |
-| 3 | AI Enhancement | Complete |
-| 4 | Validation & Polish | Complete |
-
----
-
-## Performance Metrics
-
-| Metric | Value |
-|--------|-------|
-| v1 Requirements | 30 (all validated/working) |
-| v2 Requirements | 8 (in roadmap) |
-| Phases | 4 |
+- Error handling infrastructure (ErrorBoundary, OfflineContext, retry logic)
+- Budget pacing and quality score alerts
+- AI enhanced with bidding strategy and ad copy data
+- Timezone and attribution window settings
+- All RELI, ALRT, AIEX, VALD requirements delivered
 
 ---
 
-## Accumulated Context
+## Next Steps
 
-### Decisions Made
-
-- Phase structure derived from research findings and existing validated requirements
-- v1 features (AUTH, ACCT, DSBH, CAMP, ADGR, KEYW, STER, AI, RECM) are already working and considered validated
-- Roadmap focuses on: Reliability fixes (Phase 1), v2 feature delivery (Phases 2-4)
-
-### Notes
-
-- Current codebase has all v1 features implemented
-- Research identified 8 critical pitfalls, addressed in Phase 1
-- Phase 2+ delivers v2 requirements from REQUIREMENTS.md
-
----
-
-## Session Continuity
-
-**Last completed:** Phase 4 - Validation & Polish (VALD-01, VALD-02)
-
-**Next action:** Project complete! All 4 phases finished.
+Run `/gsd-new-milestone` to define v1.1 scope

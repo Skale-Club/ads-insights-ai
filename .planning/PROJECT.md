@@ -38,12 +38,25 @@ Enable marketers to quickly understand their Google Ads performance and get AI-d
 - Google Ads API v18/v20
 - Gemini API for AI insights
 
-**Current State:**
-- Authentication flow working (Google OAuth)
-- Dashboard with metrics and charts functional
-- AI chat interface implemented
-- Multiple dashboard pages (Campaigns, AdGroups, Keywords, etc.)
-- Edge functions for Google Ads API integration
+**Current State (v1.0 shipped):**
+- All v1 features validated and working
+- Phase 1-4 infrastructure enhancements complete
+- Error handling, offline detection, retry logic
+- Budget pacing and quality score alerts
+- AI enhanced with bidding strategy and ad copy data
+- Timezone and attribution window settings available
+
+## Current State
+
+**v1.0 MVP shipped:** 2026-03-31
+- 4 phases complete, 4 plans executed
+- All RELI, ALRT, AIEX, VALD requirements delivered
+- Ready for production use
+
+## Next Milestone Goals
+
+**v1.1 (Next):** Additional features to be defined
+- Run `/gsd-new-milestone` to define next scope
 
 ## Constraints
 
@@ -61,4 +74,4 @@ Enable marketers to quickly understand their Google Ads performance and get AI-d
 
 ---
 
-*Last updated: 2026-03-31 after initialization*
+*Last updated: 2026-03-31 after v1.0 milestone*
