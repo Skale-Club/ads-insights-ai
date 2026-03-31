@@ -2,12 +2,14 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { DashboardProvider } from "@/contexts/DashboardContext";
+import { OfflineProvider } from "@/contexts/OfflineContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Analytics } from "@vercel/analytics/react";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 // Pages
 import LoginPage from "@/pages/Login";
@@ -35,68 +37,71 @@ const App = () => (
     <TooltipProvider>
       <AuthProvider>
         <DashboardProvider>
-          <Toaster />
-          <Sonner />
-          <BrowserRouter>
-            <Routes>
-              {/* Public routes */}
-              <Route path="/login" element={<LoginPage />} />
-              <Route path="/auth/callback" element={<AuthCallback />} />
+          <OfflineProvider>
+            <Toaster />
+            <Sonner />
+            <BrowserRouter>
+              <ErrorBoundary>
+                <Routes>
+                  {/* Public routes */}
+                  <Route path="/login" element={<LoginPage />} />
+                  <Route path="/auth/callback" element={<AuthCallback />} />
 
+                  {/* Protected routes */}
+                  <Route
+                    path="/connect/ads"
+                    element={
+                      <ProtectedRoute>
+                        <ConnectGoogleAdsPage />
+                      </ProtectedRoute>
+                    }
+                  />
 
-              {/* Protected routes */}
-              <Route
-                path="/connect/ads"
-                element={
-                  <ProtectedRoute>
-                    <ConnectGoogleAdsPage />
-                  </ProtectedRoute>
-                }
-              />
+                  {/* Dashboard routes */}
+                  <Route
+                    path="/dashboard"
+                    element={
+                      <ProtectedRoute>
+                        <DashboardLayout />
+                      </ProtectedRoute>
+                    }
+                  >
+                    <Route index element={<Navigate to="overview" replace />} />
+                    <Route path="overview" element={<OverviewPage />} />
+                    <Route path="campaigns" element={<CampaignsPage />} />
+                    <Route path="ad-groups" element={<AdGroupsPage />} />
+                    <Route path="ads" element={<AdsPage />} />
+                    <Route path="keywords" element={<KeywordsPage />} />
+                    <Route path="search-terms" element={<SearchTermsPage />} />
+                    <Route path="audiences" element={<AudiencesPage />} />
+                    <Route path="budgets" element={<BudgetsPage />} />
+                    <Route path="conversions" element={<ConversionsPage />} />
+                    <Route path="reports" element={<ReportsPage />} />
+                    <Route path="recommendations" element={<RecommendationsPage />} />
+                  </Route>
 
-              {/* Dashboard routes */}
-              <Route
-                path="/dashboard"
-                element={
-                  <ProtectedRoute>
-                    <DashboardLayout />
-                  </ProtectedRoute>
-                }
-              >
-              <Route index element={<Navigate to="overview" replace />} />
-                <Route path="overview" element={<OverviewPage />} />
-                <Route path="campaigns" element={<CampaignsPage />} />
-                <Route path="ad-groups" element={<AdGroupsPage />} />
-                <Route path="ads" element={<AdsPage />} />
-                <Route path="keywords" element={<KeywordsPage />} />
-                <Route path="search-terms" element={<SearchTermsPage />} />
-                <Route path="audiences" element={<AudiencesPage />} />
-                <Route path="budgets" element={<BudgetsPage />} />
-                <Route path="conversions" element={<ConversionsPage />} />
-                <Route path="reports" element={<ReportsPage />} />
-                <Route path="recommendations" element={<RecommendationsPage />} />
-              </Route>
+                  {/* Settings */}
+                  <Route
+                    path="/settings"
+                    element={
+                      <ProtectedRoute>
+                        <DashboardLayout />
+                      </ProtectedRoute>
+                    }
+                  >
+                    <Route index element={<SettingsPage />} />
+                  </Route>
 
-              {/* Settings */}
-              <Route
-                path="/settings"
-                element={
-                  <ProtectedRoute>
-                    <DashboardLayout />
-                  </ProtectedRoute>
-                }
-              >
-                <Route index element={<SettingsPage />} />
-              </Route>
+                  {/* Redirect root to login or dashboard */}
+                  <Route path="/" element={<Navigate to="/login" replace />} />
 
-              {/* Redirect root to login or dashboard */}
-              <Route path="/" element={<Navigate to="/login" replace />} />
-
-              {/* Catch-all */}
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </BrowserRouter>
-          <Analytics />
+                  {/* Catch-all */}
+                  <Route path="*" element={<NotFound />} />
+                </Routes>
+              </ErrorBoundary>
+            </BrowserRouter>
+            <Analytics />
+          </OfflineProvider>
         </DashboardProvider>
       </AuthProvider>
     </TooltipProvider>

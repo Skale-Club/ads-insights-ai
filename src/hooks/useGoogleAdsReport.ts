@@ -55,7 +55,8 @@ export function useGoogleAdsReport<T = any>(
     queryFn: () => fetchReport(reportType, customerId!, startDate, endDate, token!),
     enabled: (options.enabled !== false) && !!customerId && !!token,
     staleTime: 5 * 60 * 1000,
-    retry: 1,
+    retry: 3,
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
     onError: (err) => {
       const message = err instanceof Error ? err.message : String(err);
       const isUnauth =

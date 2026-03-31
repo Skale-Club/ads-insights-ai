@@ -34,7 +34,9 @@
 6. Failed API requests automatically retry 3 times with exponential backoff
 7. Critical user flows have test coverage
 
-**Plans:** TBD
+**Plans:** 2 plans
+- [ ] phase-1-01-PLAN.md — Error boundaries, offline detection, retry logic, loading states
+- [ ] phase-1-02-PLAN.md — Pagination, HTTP status codes, test coverage
 
 ---
 
