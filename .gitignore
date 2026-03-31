@@ -26,6 +26,10 @@ nul
 
 # Claude Code local settings
 .claude/settings.local.json
+.claude/
+
+# TypeScript build cache
+*.tsbuildinfo
 
 # Security
 .env

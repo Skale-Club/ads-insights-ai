@@ -19,7 +19,7 @@ export default function OverviewPage() {
   return (
     <div className="space-y-8 animate-fade-in">
       <AlertSystem />
-      
+
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
@@ -31,3 +31,14 @@ export default function OverviewPage() {
       {/* Hero Metrics + Quick Insights - Side by Side */}
       <div className="grid gap-4 lg:grid-cols-2">
         <HeroMetrics />
+        <QuickInsights />
+      </div>
+
+      {/* Performance Chart */}
+      <PerformanceChart />
+
+      {/* Top Performers */}
+      <TopPerformers />
+    </div>
+  );
+}
