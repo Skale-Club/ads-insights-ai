@@ -9,7 +9,7 @@
 ## Phases
 
 - [x] **Phase 1: Foundation & Reliability** - Infrastructure hardening and error handling
-- [ ] **Phase 2: Alerting & Monitoring** - Budget and account health notifications
+- [x] **Phase 2: Alerting & Monitoring** - Budget and account health notifications
 - [ ] **Phase 3: AI Enhancement** - Deeper AI integration with Google Ads data
 - [ ] **Phase 4: Validation & Polish** - Data accuracy verification and UX polish
 
@@ -56,7 +56,7 @@
 5. Alerts appear in-app with appropriate severity indicators
 
 **Plans:** 1 plan
-- [ ] phase-2-01-PLAN.md — Alert types, AlertSystem component, AlertSettings, TopBar bell icon
+- [x] phase-2-01-PLAN.md — Alert types, AlertSystem component, AlertSettings, TopBar bell icon
 
 **UI hint:** yes
 
