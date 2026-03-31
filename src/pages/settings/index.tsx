@@ -3,6 +3,7 @@ import { AccountSection } from './AccountSection';
 import { EnvironmentSection } from './EnvironmentSection';
 import { PrivacySection } from './PrivacySection';
 import { AISettingsCard } from '@/components/settings/AISettingsCard';
+import { AlertSettingsCard } from '@/components/settings/AlertSettings';
 
 export default function SettingsPage() {
   return (
@@ -17,6 +18,7 @@ export default function SettingsPage() {
       <ProfileSection />
       <AccountSection />
       <AISettingsCard />
+      <AlertSettingsCard />
       <EnvironmentSection />
       <PrivacySection />
     </div>
