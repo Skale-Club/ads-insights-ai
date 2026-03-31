@@ -100,42 +100,54 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUTH-01 | — | ✓ Validated |
-| AUTH-02 | — | ✓ Validated |
-| AUTH-03 | — | ✓ Validated |
-| AUTH-04 | — | ✓ Validated |
-| ACCT-01 | — | ✓ Validated |
-| ACCT-02 | — | ✓ Validated |
-| ACCT-03 | — | ✓ Validated |
-| ACCT-04 | — | ✓ Validated |
-| DSBH-01 | — | ✓ Validated |
-| DSBH-02 | — | ✓ Validated |
-| DSBH-03 | — | ✓ Validated |
-| DSBH-04 | — | ✓ Validated |
-| DSBH-05 | — | ✓ Validated |
-| CAMP-01 | — | ✓ Validated |
-| CAMP-02 | — | ✓ Validated |
-| CAMP-03 | — | ✓ Validated |
-| ADGR-01 | — | ✓ Validated |
-| ADGR-02 | — | ✓ Validated |
-| KEYW-01 | — | ✓ Validated |
-| KEYW-02 | — | ✓ Validated |
-| STER-01 | — | ✓ Validated |
-| STER-02 | — | ✓ Validated |
-| AI-01 | — | ✓ Validated |
-| AI-02 | — | ✓ Validated |
-| AI-03 | — | ✓ Validated |
-| AI-04 | — | ✓ Validated |
-| RECM-01 | — | ✓ Validated |
-| RECM-02 | — | ✓ Validated |
-| RELI-01 | — | Pending |
-| RELI-02 | — | Pending |
-| RELI-03 | — | Pending |
+| AUTH-01 | v1 (Validated) | ✓ Validated |
+| AUTH-02 | v1 (Validated) | ✓ Validated |
+| AUTH-03 | v1 (Validated) | ✓ Validated |
+| AUTH-04 | v1 (Validated) | ✓ Validated |
+| ACCT-01 | v1 (Validated) | ✓ Validated |
+| ACCT-02 | v1 (Validated) | ✓ Validated |
+| ACCT-03 | v1 (Validated) | ✓ Validated |
+| ACCT-04 | v1 (Validated) | ✓ Validated |
+| DSBH-01 | v1 (Validated) | ✓ Validated |
+| DSBH-02 | v1 (Validated) | ✓ Validated |
+| DSBH-03 | v1 (Validated) | ✓ Validated |
+| DSBH-04 | v1 (Validated) | ✓ Validated |
+| DSBH-05 | v1 (Validated) | ✓ Validated |
+| CAMP-01 | v1 (Validated) | ✓ Validated |
+| CAMP-02 | v1 (Validated) | ✓ Validated |
+| CAMP-03 | v1 (Validated) | ✓ Validated |
+| ADGR-01 | v1 (Validated) | ✓ Validated |
+| ADGR-02 | v1 (Validated) | ✓ Validated |
+| KEYW-01 | v1 (Validated) | ✓ Validated |
+| KEYW-02 | v1 (Validated) | ✓ Validated |
+| STER-01 | v1 (Validated) | ✓ Validated |
+| STER-02 | v1 (Validated) | ✓ Validated |
+| AI-01 | v1 (Validated) | ✓ Validated |
+| AI-02 | v1 (Validated) | ✓ Validated |
+| AI-03 | v1 (Validated) | ✓ Validated |
+| AI-04 | v1 (Validated) | ✓ Validated |
+| RECM-01 | v1 (Validated) | ✓ Validated |
+| RECM-02 | v1 (Validated) | ✓ Validated |
+| RELI-01 | Phase 1 | Pending |
+| RELI-02 | Phase 1 | Pending |
+| RELI-03 | Phase 1 | Pending |
+| ALRT-01 | Phase 2 | Pending |
+| ALRT-02 | Phase 2 | Pending |
+| ALRT-03 | Phase 2 | Pending |
+| AIEX-01 | Phase 3 | Pending |
+| AIEX-02 | Phase 3 | Pending |
+| AIEX-03 | Phase 3 | Pending |
+| VALD-01 | Phase 4 | Pending |
+| VALD-02 | Phase 4 | Pending |
 
 **Coverage:**
 - v1 requirements: 30 total
-- Mapped to phases: TBD
-- Unmapped: 0 ✓ (All current features validated, new requirements for future phases)
+- Mapped to phases: 37 total (30 v1 validated + 7 new)
+- v1 (validated): 30 ✓
+- Phase 1: 3 requirements (RELI-01, RELI-02, RELI-03)
+- Phase 2: 3 requirements (ALRT-01, ALRT-02, ALRT-03)
+- Phase 3: 3 requirements (AIEX-01, AIEX-02, AIEX-03)
+- Phase 4: 2 requirements (VALD-01, VALD-02)
 
 ---
 *Requirements defined: 2026-03-31*
