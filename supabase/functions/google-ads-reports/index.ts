@@ -1061,14 +1061,14 @@ async function fetchDemographicsGender(
 
   const query = `
     SELECT
-      user_profile.gender,
+      user_profile_view.gender,
       metrics.cost_micros,
       metrics.impressions,
       metrics.clicks,
       metrics.conversions
-    FROM user_profile
+    FROM user_profile_view
     WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
-      AND user_profile.gender IS NOT NULL
+      AND user_profile_view.gender IS NOT NULL
   `;
 
   let results: any[] = [];
@@ -1091,7 +1091,7 @@ async function fetchDemographicsGender(
   const genderMap: Record<string, any> = {};
 
   for (const row of results) {
-    const gender = (row.userProfile?.gender || "UNKNOWN").toUpperCase();
+    const gender = (row.userProfileView?.gender || "UNKNOWN").toUpperCase();
     const metrics = row.metrics;
 
     if (!genderMap[gender]) {
@@ -1135,14 +1135,14 @@ async function fetchDemographicsAge(
 
   const query = `
     SELECT
-      user_profile.age_range,
+      user_profile_view.age_range,
       metrics.cost_micros,
       metrics.impressions,
       metrics.clicks,
       metrics.conversions
-    FROM user_profile
+    FROM user_profile_view
     WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
-      AND user_profile.age_range IS NOT NULL
+      AND user_profile_view.age_range IS NOT NULL
   `;
 
   let results: any[] = [];
@@ -1165,7 +1165,7 @@ async function fetchDemographicsAge(
   const ageMap: Record<string, any> = {};
 
   for (const row of results) {
-    const ageRange = (row.userProfile?.ageRange || "UNKNOWN").toUpperCase();
+    const ageRange = (row.userProfileView?.ageRange || "UNKNOWN").toUpperCase();
     const metrics = row.metrics;
 
     if (!ageMap[ageRange]) {
@@ -1198,6 +1198,78 @@ async function fetchDemographicsAge(
     ...a,
     ctr: a.impressions > 0 ? (a.clicks / a.impressions) * 100 : 0,
     cpa: a.conversions > 0 ? a.cost / a.conversions : 0,
+  }));
+
+  return { data, errors };
+}
+
+async function fetchDemographicsLocation(
+  cleanCustomerId: string,
+  headers: Record<string, string>,
+  startDate: string,
+  endDate: string
+): Promise<{ data: any[]; errors: string[] }> {
+  const errors: string[] = [];
+
+  const query = `
+    SELECT
+      geographic_view.country_criterion_id,
+      geographic_view.city,
+      metrics.cost_micros,
+      metrics.impressions,
+      metrics.clicks,
+      metrics.conversions
+    FROM geographic_view
+    WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+      AND geographic_view.country_criterion_id IS NOT NULL
+  `;
+
+  let results: any[] = [];
+
+  try {
+    const response = await fetch(
+      `https://googleads.googleapis.com/${API_VERSION}/customers/${cleanCustomerId}/googleAds:searchStream`,
+      { method: "POST", headers, body: JSON.stringify({ query }) }
+    );
+    if (response.ok) {
+      const data = await response.json();
+      results = data.reduce((acc: any[], batch: any) => acc.concat(batch.results || []), []);
+    } else {
+      errors.push(`Demographics location query failed`);
+    }
+  } catch (e: any) {
+    errors.push(`Demographics location query error: ${e.message}`);
+  }
+
+  const locationMap: Record<string, any> = {};
+
+  for (const row of results) {
+    const criterionId = row.geographicView?.countryCriterionId;
+    const city = row.geographicView?.city || "Unknown";
+    const metrics = row.metrics;
+
+    const key = `${criterionId}-${city}`;
+    if (!locationMap[key]) {
+      locationMap[key] = {
+        id: String(criterionId),
+        name: city,
+        impressions: 0,
+        clicks: 0,
+        conversions: 0,
+        cost: 0,
+      };
+    }
+
+    locationMap[key].impressions += Number(metrics?.impressions || 0);
+    locationMap[key].clicks += Number(metrics?.clicks || 0);
+    locationMap[key].conversions += Number(metrics?.conversions || 0);
+    locationMap[key].cost += microsToAmount(metrics?.costMicros || 0);
+  }
+
+  const data = Object.values(locationMap).map((l: any) => ({
+    ...l,
+    ctr: l.impressions > 0 ? (l.clicks / l.impressions) * 100 : 0,
+    cpa: l.conversions > 0 ? l.cost / l.conversions : 0,
   }));
 
   return { data, errors };
@@ -1582,7 +1654,7 @@ serve(async (req) => {
         }
         break;
       case "demographics_location":
-        const locResult = await fetchDemographicsAge(cleanCustomerId, headers, startDate, endDate);
+        const locResult = await fetchDemographicsLocation(cleanCustomerId, headers, startDate, endDate);
         data = locResult.data;
         if (locResult.errors.length > 0) {
           console.error("[google-ads-reports] Demographics location errors:", locResult.errors);
