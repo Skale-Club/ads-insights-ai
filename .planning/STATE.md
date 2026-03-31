@@ -6,11 +6,11 @@
 
 ## Project Reference
 
-See: .planning/PROJECT.md (v1.1 active)
+See: .planning/PROJECT.md (v1.1 shipped)
 
 **Core Value:** Enable marketers to quickly understand their Google Ads performance and get AI-driven recommendations to optimize campaigns — without leaving the dashboard.
 
-**Current Focus:** v1.1 Audiences Fix - Planning Phase
+**Current Focus:** v1.1 shipped - Planning next milestone
 
 ---
 
@@ -18,9 +18,9 @@ See: .planning/PROJECT.md (v1.1 active)
 
 | Attribute | Value |
 |-----------|-------|
-| Phase | 5 (Audiences Fix) |
-| Plan | Planning |
-| Status | In Progress |
+| Phase | 5 (Complete) |
+| Plan | Complete |
+| Status | Shipped |
 | Progress | 1/1 plan (100%) |
 
 ---
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (v1.1 active)
 | Milestone | Status | Phases | Date |
 |-----------|--------|--------|------|
 | v1.0 MVP | ✅ Complete | 4 | 2026-03-31 |
-| v1.1 Audiences Fix | 🚧 In Progress | 1 | - |
+| v1.1 Audiences Fix | ✅ Complete | 1 | 2026-03-31 |
 
 ---
 
@@ -44,4 +44,4 @@ See: .planning/PROJECT.md (v1.1 active)
 
 ## Next Steps
 
-Execute: `/gsd-execute-phase 5`
+Run `/gsd-new-milestone` to start planning the next milestone (questioning → research → requirements → roadmap)

@@ -3,28 +3,17 @@
 ## Milestones
 
 - ✅ **v1.0 MVP** — 4 phases, 4 plans (shipped 2026-03-31) - see [.planning/milestones/v1.0-ROADMAP.md](./.planning/milestones/v1.0-ROADMAP.md)
-- 🚧 **v1.1 Audiences Fix** — Phase 5 (in progress)
+- ✅ **v1.1 Audiences Fix** — Phase 5, 1 plan (shipped 2026-03-31) - see [.planning/milestones/v1.1-ROADMAP.md](./.planning/milestones/v1.1-ROADMAP.md)
 
 ---
 
 ## Phase Details
 
-### Phase 5: Audiences Page Fix
+### Next Milestone: TBD
 
-**Goal:** Fix the Audiences page to properly fetch and display audience, device, and location data from Google Ads.
+**Status:** Planning not started
 
-**Depends on:** Nothing (new phase)
-
-**Requirements:** AUD-01, AUD-02, AUD-03
-
-**Success Criteria** (what must be TRUE):
-1. Audiences page displays actual audience data (not empty)
-2. Device demographics tab shows device performance metrics
-3. Location demographics tab shows geographic performance data
-4. All three tabs handle loading and error states properly
-
-**Plans:** 1 plan
-- [ ] phase-5-01-PLAN.md — Fix Audiences page (audiences, devices, locations data fetching)
+**Requirements:** TBD
 
 ---
 
@@ -33,4 +22,4 @@
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 1-4 | v1.0 MVP | 4/4 | Complete | 2026-03-31 |
-| 5 | v1.1 | 1/1 | In Progress | - |
+| 5 | v1.1 | 1/1 | Complete | 2026-03-31 |
