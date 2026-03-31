@@ -21,9 +21,11 @@ Enable marketers to quickly understand their Google Ads performance and get AI-d
 - ✓ Campaign management (view campaigns, ad groups, keywords, search terms)
 - ✓ Recommendations page with AI-generated optimization suggestions
 
-### Active
+### v1.1 Active
 
-- [ ] User-defined Active requirements to be added
+- [ ] **AUD-01**: Audiences page fetches and displays audience data correctly
+- [ ] **AUD-02**: Device demographics show device performance data
+- [ ] **AUD-03**: Location demographics show geographic performance data
 
 ### Out of Scope
 
@@ -55,8 +57,10 @@ Enable marketers to quickly understand their Google Ads performance and get AI-d
 
 ## Next Milestone Goals
 
-**v1.1 (Next):** Additional features to be defined
-- Run `/gsd-new-milestone` to define next scope
+**v1.1 (In Progress):** Audiences Page Fix
+- Fix Audiences page to fetch data from Google Ads
+- Show device demographics performance
+- Show location demographics performance
 
 ## Constraints
 
@@ -74,4 +78,4 @@ Enable marketers to quickly understand their Google Ads performance and get AI-d
 
 ---
 
-*Last updated: 2026-03-31 after v1.0 milestone*
+*Last updated: 2026-03-31 for v1.1 milestone*
