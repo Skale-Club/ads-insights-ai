@@ -654,7 +654,7 @@ export function ChatBubble({ campaignContext }: { campaignContext?: ChatCampaign
     const topCampaigns = (campaigns || [])
       .slice()
       .sort((a, b) => (b.spend || 0) - (a.spend || 0))
-      .slice(0, 20)
+      .slice(0, 25)
       .map((c) => ({
         name: c.name,
         spend: c.spend,
@@ -662,6 +662,7 @@ export function ChatBubble({ campaignContext }: { campaignContext?: ChatCampaign
         cpa: c.cpa,
         roas: c.roas ?? null,
         ctr: c.ctr,
+        biddingStrategy: c.biddingStrategy || 'Manual',
       }));
 
     const topKeywords = (keywords || [])
@@ -712,6 +713,8 @@ export function ChatBubble({ campaignContext }: { campaignContext?: ChatCampaign
         cost: ad.cost,
         conversions: ad.conversions,
         ctr: ad.ctr,
+        headlines: ad.headlines || [],
+        descriptions: ad.descriptions || [],
       }));
 
     const searchTermsSample = (searchTerms || [])

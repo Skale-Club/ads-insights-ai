@@ -44,6 +44,7 @@ function buildQuery(reportType: ReportType, startDate: string, endDate: string):
           campaign.name,
           campaign.status,
           campaign.advertising_channel_type,
+          campaign.bidding_strategy,
           campaign_budget.amount_micros,
           metrics.cost_micros,
           metrics.impressions,
@@ -120,6 +121,10 @@ function buildQuery(reportType: ReportType, startDate: string, endDate: string):
           ad_group_ad.ad.type,
           ad_group.name,
           campaign.name,
+          ad_group_ad.ad.responsive_search_ad.headlines,
+          ad_group_ad.ad.responsive_search_ad.descriptions,
+          ad_group_ad.ad.expanded_text_ad.headline_part,
+          ad_group_ad.ad.expanded_text_ad.description,
           metrics.cost_micros,
           metrics.impressions,
           metrics.clicks,
@@ -257,6 +262,7 @@ function transformCampaigns(results: any[]) {
         name: row.campaign.name || `Campaign ${id}`,
         status: status === "enabled" ? "enabled" : "paused",
         type: typeMap[channelType] || channelType,
+        biddingStrategy: row.campaign.biddingStrategy || "Manual",
         budget: microsToAmount(row.campaignBudget?.amountMicros || 0),
         spend: 0,
         impressions: 0,
@@ -405,6 +411,35 @@ function transformAdGroups(results: any[]) {
   }));
 }
 
+function extractHeadlines(ad: any): string[] {
+  if (!ad) return [];
+  
+  if (ad.responsiveSearchAd?.headlines) {
+    return ad.responsiveSearchAd.headlines.slice(0, 3).map((h: any) => h.text || h);
+  }
+  
+  if (ad.expandedTextAd?.headlinePart) {
+    const parts = [ad.expandedTextAd.headlinePart1, ad.expandedTextAd.headlinePart2, ad.expandedTextAd.headlinePart3];
+    return parts.filter(Boolean).slice(0, 3);
+  }
+  
+  return [];
+}
+
+function extractDescriptions(ad: any): string[] {
+  if (!ad) return [];
+  
+  if (ad.responsiveSearchAd?.descriptions) {
+    return ad.responsiveSearchAd.descriptions.slice(0, 2).map((d: any) => d.text || d);
+  }
+  
+  if (ad.expandedTextAd?.description) {
+    return [ad.expandedTextAd.description].filter(Boolean).slice(0, 2);
+  }
+  
+  return [];
+}
+
 function transformAds(results: any[]) {
   const adMap: Record<string, any> = {};
 
@@ -436,6 +471,8 @@ function transformAds(results: any[]) {
         campaign: row.campaign?.name || "",
         type: typeMap[adType] || adType.replace(/_/g, " "),
         status: status === "enabled" ? "enabled" : "paused",
+        headlines: extractHeadlines(row.adGroupAd?.ad),
+        descriptions: extractDescriptions(row.adGroupAd?.ad),
         impressions: 0,
         clicks: 0,
         cost: 0,
