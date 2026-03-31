@@ -6,8 +6,12 @@ import { useToast } from '@/hooks/use-toast';
 
 export type DateRangePreset = 'last7' | 'last14' | 'last30' | 'thisMonth' | 'lastMonth' | 'thisYear' | 'lastYear' | 'allTime' | 'custom';
 
+export type AttributionWindow = '7day' | '14day' | '30day' | '60day' | '90day';
+
 const STORAGE_SELECTED_ACCOUNT_ID = 'adsinsight:selectedAccountId';
 const STORAGE_HIDDEN_ACCOUNT_IDS = 'adsinsight:hiddenAccountIds';
+const STORAGE_TIMEZONE = 'adsinsight:timezone';
+const STORAGE_ATTRIBUTION_WINDOW = 'adsinsight:attributionWindow';
 
 interface DateRange {
   from: Date;
@@ -42,6 +46,10 @@ interface DashboardContextType {
   setLastRefreshed: (date: Date) => void;
   chatWidth: number;
   setChatWidth: (width: number) => void;
+  timezone: string;
+  setTimezone: (tz: string) => void;
+  attributionWindow: AttributionWindow;
+  setAttributionWindow: (window: AttributionWindow) => void;
 }
 
 const DashboardContext = createContext<DashboardContextType | undefined>(undefined);
@@ -133,6 +141,22 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   const [dateRange, setDateRange] = useState<DateRange>(getDateRangeFromPreset('last30'));
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [chatWidth, setChatWidth] = useState(70);
+  const [timezone, setTimezoneState] = useState<string>(() => 
+    safeGetLocalStorage(STORAGE_TIMEZONE) || 'America/New_York'
+  );
+  const [attributionWindow, setAttributionWindowState] = useState<AttributionWindow>(() => 
+    (safeGetLocalStorage(STORAGE_ATTRIBUTION_WINDOW) as AttributionWindow) || '30day'
+  );
+
+  const setTimezone = (tz: string) => {
+    setTimezoneState(tz);
+    safeSetLocalStorage(STORAGE_TIMEZONE, tz);
+  };
+
+  const setAttributionWindow = (window: AttributionWindow) => {
+    setAttributionWindowState(window);
+    safeSetLocalStorage(STORAGE_ATTRIBUTION_WINDOW, window);
+  };
 
   const visibleAccounts = accounts.filter((a) => !hiddenAccountIds.includes(a.id));
 
@@ -246,6 +270,10 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
         setLastRefreshed,
         chatWidth,
         setChatWidth,
+        timezone,
+        setTimezone,
+        attributionWindow,
+        setAttributionWindow,
       }}
     >
       {children}

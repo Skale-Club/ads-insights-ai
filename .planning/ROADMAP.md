@@ -96,7 +96,11 @@
 5. Loading skeletons displayed during data fetches
 6. Large accounts (1000+ campaigns) load without performance degradation
 
-**Plans:** TBD
+**Plans:** 4 plans
+- [ ] phase-4-01-PLAN.md — Timezone and attribution window configuration
+- [ ] phase-4-02-PLAN.md — Discrepancy highlighting with explanations
+- [ ] phase-4-03-PLAN.md — Loading skeletons and empty states
+- [ ] phase-4-04-PLAN.md — Large account performance optimization
 
 **UI hint:** yes
 
@@ -108,8 +112,8 @@
 |-------|----------------|--------|-----------|
 | 1. Foundation & Reliability | 2/2 | Complete | Yes |
 | 2. Alerting & Monitoring | 1/1 | Complete | Yes |
-| 3. AI Enhancement | 1/1 | Planned | - |
-| 4. Validation & Polish | 0/1 | Not started | - |
+| 3. AI Enhancement | 1/1 | Complete | Yes |
+| 4. Validation & Polish | 4/4 | Planned | - |
 
 ---
 
