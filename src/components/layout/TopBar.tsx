@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/popover';
 import { useDashboard, DateRangePreset } from '@/contexts/DashboardContext';
 import { cn } from '@/lib/utils';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
 const datePresets: { value: DateRangePreset; label: string }[] = [
   { value: 'last7', label: 'Last 7 days' },
@@ -48,6 +48,7 @@ export function TopBar() {
   } = useDashboard();
 
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const navigate = useNavigate();
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -65,7 +66,7 @@ export function TopBar() {
         {/* Platform Selector */}
         <div className="flex rounded-lg border border-border overflow-hidden">
           <button
-            onClick={() => setPlatform('google')}
+            onClick={() => { setPlatform('google'); navigate('/dashboard/overview'); }}
             className={cn(
               'px-3 py-1.5 text-xs font-medium transition-colors',
               platform === 'google'
@@ -76,7 +77,7 @@ export function TopBar() {
             Google Ads
           </button>
           <button
-            onClick={() => setPlatform('meta')}
+            onClick={() => { setPlatform('meta'); navigate('/dashboard/meta/overview'); }}
             className={cn(
               'px-3 py-1.5 text-xs font-medium transition-colors border-l border-border',
               platform === 'meta'
