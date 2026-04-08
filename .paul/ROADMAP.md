@@ -7,16 +7,16 @@
 | v1.0 | MVP | 1–4 | ✅ Shipped | 2026-03-31 |
 | v1.1 | Audiences Fix + CLI Session | 5 | ✅ Shipped | 2026-04-08 |
 | v1.2 | google-ads-manager Skill Integration | 6–9 | ✅ Shipped | 2026-04-08 |
-| v1.3 | Meta Ads Integration | 10–14 | 🚧 In Progress | - |
+| v1.3 | Meta Ads Integration | 10–14 | ✅ Shipped | 2026-04-08 |
 
 ---
 
-## 🚧 Active Milestone: v1.3 — Meta Ads Integration
+## ✅ Shipped Milestone: v1.3 — Meta Ads Integration
 
 **Goal:** Add full Meta Ads (Facebook/Instagram) management to the platform alongside Google Ads. Users select their platform (Google | Meta) at the top of the dashboard. New panel suite covers campaigns, ad sets, ads, and AI chat. CLI session and workflow system mirrors what exists for Google.
 
-**Status:** Phase 10 — Planning
-**Progress:** [░░░░░░░░░░] 0%
+**Status:** Shipped 2026-04-08
+**Progress:** [██████████] 100%
 
 ---
 
@@ -39,9 +39,9 @@
 - Route guard: Meta pages redirect to onboarding if no Meta account connected
 
 **Plans:**
-- [ ] 10-01: DB schema (companies, meta_connections, meta_accounts) + migrations
-- [ ] 10-02: meta-auth + meta-accounts edge functions
-- [ ] 10-03: Company registration UI + Meta OAuth connect wizard + platform selector
+- [x] 10-01: DB schema (companies, meta_connections, meta_accounts) + migrations
+- [x] 10-02: meta-auth + meta-accounts edge functions
+- [x] 10-03: Company registration UI + Meta OAuth connect wizard + platform selector
 
 ---
 
@@ -65,7 +65,7 @@
 - Add to supabase/config.toml with `verify_jwt = false`
 
 **Plans:**
-- [ ] 11-01: meta-reports edge function (all 6 report types)
+- [x] 11-01: meta-reports edge function (all 6 report types)
 
 ---
 
@@ -87,9 +87,9 @@
 - Redirect `/dashboard` to platform-appropriate overview when platform changes
 
 **Plans:**
-- [ ] 12-01: Platform-aware routing + Sidebar + useMetaReport hook
-- [ ] 12-02: MetaOverviewPage (KPIs + charts)
-- [ ] 12-03: MetaCampaignsPage + MetaAdSetsPage + MetaAdsPage
+- [x] 12-01: Platform-aware routing + Sidebar + useMetaReport hook
+- [x] 12-02: MetaOverviewPage (KPIs + charts)
+- [x] 12-03: MetaCampaignsPage + MetaAdSetsPage + MetaAdsPage
 
 ---
 
@@ -113,8 +113,8 @@
 - Add meta-mutate to supabase/config.toml
 
 **Plans:**
-- [ ] 13-01: Install ad-creative skill + meta-mutate edge function
-- [ ] 13-02: Update analyze-ads for Meta platform support + Meta tool execution
+- [x] 13-01: Install ad-creative skill + meta-mutate edge function
+- [x] 13-02: Update analyze-ads for Meta platform support + Meta tool execution
 
 ---
 
@@ -138,8 +138,8 @@
 - Human approval protocol applied to Meta mutations (same pattern as Google)
 
 **Plans:**
-- [ ] 14-01: get-meta-cli-session edge function + MetaClaudeCodeSection UI
-- [ ] 14-02: meta-ads-cli.md + workflows/meta-ads.md
+- [x] 14-01: get-meta-cli-session edge function + MetaClaudeCodeSection UI
+- [x] 14-02: meta-ads-cli.md + workflows/meta-ads.md
 
 ---
 
