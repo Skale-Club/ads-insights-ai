@@ -32,3 +32,12 @@ verify_jwt = false
 
 [functions.google-ads-mutate]
 verify_jwt = false
+
+[functions.google-ads-execute]
+verify_jwt = false
+
+[functions.process-attachment]
+verify_jwt = false
+
+[functions.get-cli-session]
+verify_jwt = false

@@ -24,9 +24,13 @@ dist-ssr
 *.sw?
 nul
 
-# Claude Code local settings
+# Claude Code local settings (ignore secrets/local config, track project docs)
 .claude/settings.local.json
+.claude/settings.json
 .claude/
+!.claude/*.md
+!.claude/workflows/
+!.claude/workflows/*.md
 
 # TypeScript build cache
 *.tsbuildinfo
@@ -41,3 +45,6 @@ supabase/.temp
 
 # Tools (Supabase CLI and other binaries)
 tools/
+
+# Claude Code CLI session (contains sensitive Google OAuth token)
+.ads-cli-session.json

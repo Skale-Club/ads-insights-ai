@@ -1,4 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { z } from "npm:zod@3.22.4";
+import { buildSystemPrompt } from "./system-prompt.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -105,59 +107,109 @@ const toolDefinitions = [
   },
 ];
 
+async function fetchAdsReport(
+  args: { reportType: string; startDate: string; endDate: string },
+  providerToken: string,
+  customerId: string,
+): Promise<unknown> {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  if (!supabaseUrl) return { error: "SUPABASE_URL not configured" };
+
+  try {
+    const resp = await fetch(`${supabaseUrl}/functions/v1/google-ads-reports`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        providerToken,
+        customerId,
+        reportType: args.reportType,
+        startDate: args.startDate,
+        endDate: args.endDate,
+      }),
+    });
+    if (!resp.ok) {
+      const errText = await resp.text();
+      return { error: `google-ads-reports error (${resp.status}): ${errText}` };
+    }
+    return await resp.json();
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "fetch failed" };
+  }
+}
+
+async function resolveQueryAdsData(
+  nonStreamUrl: string,
+  requestBody: Record<string, unknown>,
+  providerToken: string,
+  customerId: string,
+): Promise<{ contents: unknown[]; finalText: string | null }> {
+  let contents = [...(requestBody.contents as unknown[])];
+
+  for (let i = 0; i < 4; i++) {
+    const resp = await fetch(nonStreamUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...requestBody, contents }),
+    });
+
+    if (!resp.ok) break;
+
+    const data = await resp.json();
+    const parts: any[] = data?.candidates?.[0]?.content?.parts ?? [];
+    const queryCall = parts.find((p: any) => p.functionCall?.name === "queryAdsData");
+
+    if (!queryCall) {
+      const text = parts.filter((p: any) => p.text).map((p: any) => p.text).join("");
+      return { contents, finalText: text || null };
+    }
+
+    const result = await fetchAdsReport(queryCall.functionCall.args, providerToken, customerId);
+    contents = [
+      ...contents,
+      { role: "model", parts },
+      {
+        role: "user",
+        parts: [{
+          functionResponse: {
+            name: "queryAdsData",
+            response: { content: result },
+          },
+        }],
+      },
+    ];
+  }
+
+  return { contents, finalText: null };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { messages, campaignData, apiKey, model, enableTools = true } = await req.json();
+    const AnalyzeRequestSchema = z.object({
+      apiKey: z.string().min(1, "API key nao configurada. Adicione sua chave do Gemini nas Configuracoes."),
+      messages: z.array(z.object({ role: z.string(), content: z.unknown() })).min(1, "messages are required"),
+      campaignData: z.unknown().optional(),
+      model: z.string().optional(),
+      enableTools: z.boolean().optional().default(true),
+      providerToken: z.string().optional(),
+      customerId: z.string().optional(),
+    });
 
-    if (!apiKey) {
+    const body = await req.json();
+    const parseResult = AnalyzeRequestSchema.safeParse(body);
+    if (!parseResult.success) {
+      const firstError = parseResult.error.errors[0]?.message ?? "Invalid request";
       return new Response(
-        JSON.stringify({
-          error: "API key nao configurada. Adicione sua chave do Gemini nas Configuracoes.",
-        }),
+        JSON.stringify({ error: firstError }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
+    const { messages, campaignData, apiKey, model, enableTools, providerToken, customerId } = parseResult.data;
 
-    const systemPrompt =
-      `You are an expert Google Ads analyst embedded directly within the user's dashboard. Your primary goal is to **analyze internal client data** and **propose actionable improvements**.\n\n` +
-      `Create a distinct section for "Detailed Analysis" and "Key Recommendations".\n\n` +
-      `## Golden Rules\n` +
-      `1. **Context Aware**: You always have access to the dashboard context sent in campaignData (overview, trends, campaigns, ad groups, ads, keywords, search terms, audiences, budgets, conversions, negatives, and current page). **Never** ask for data that is already provided in the context.\n` +
-      `2. **Proactive Analysis**: Don't just answer questions. If you see a high CPA or low CTR in the context, point it out.\n` +
-      `3. **No Walls of Text**: BREAK DOWN your responses. Paragraphs should be max 2-3 lines. Use bullet points liberally.\n` +
-      `4. **Fragmented Delivery**: If you have a lot to say, structure it with clear headers and short sections. \n` +
-      `5. **Internal References**: When mentioning a campaign or keyword, use its exact name so the user can find it.\n` +
-      `6. **Memory**: Remember previous turns in the conversation. If the user says "refine that", know what "that" refers to.\n` +
-      `7. **Action Oriented**: When you identify an optimization opportunity, USE THE TOOLS to take action. Don't just suggest - execute when appropriate.\n\n` +
-      `## Analysis Skills\n` +
-      `### Metric Correlation\n` +
-      `- LOOK FOR: Increased CPA vs Decreased CTR (Ad fatigue?), High Spend vs Zero Conversions (Wasted budget).\n` +
-      `### Budget Optimization\n` +
-      `- CHECK: Keywords with spend > $50 and 0 conversions. High performing campaigns limited by budget (high ROAS).\n` +
-      `- ACTION: Use adjustBid to reduce bids on underperforming keywords, or pauseCampaign for severely underperforming campaigns.\n` +
-      `### Search Term Mining\n` +
-      `- SCAN: Search terms in the context. Flag irrelevant ones as negative keyword suggestions.\n` +
-      `- ACTION: Use addNegativeKeyword to immediately add wasteful search terms as negatives.\n` +
-      `- If "searchTerms" exists in campaignData, treat it as the available raw query list for this request and do not claim you lack access to search terms.\n\n` +
-      `### Cross-Page Analysis\n` +
-      `- Use uiContext.currentSection to prioritize what the user is looking at now, but cross-check with all other sections before giving final recommendations.\n\n` +
-      `## When to Use Tools\n` +
-      `- **addNegativeKeyword**: When you find search terms with high clicks/spend and no conversions\n` +
-      `- **adjustBid**: When a keyword/campaign has poor ROAS or could benefit from increased investment\n` +
-      `- **pauseCampaign**: When a campaign is severely underperforming and wasting budget\n` +
-      `- **enableCampaign**: When conditions are right to resume a previously paused campaign\n` +
-      `- **updateCampaignBudget**: When a campaign needs more budget (high ROAS) or less (low ROAS)\n\n` +
-      `## Interaction Style\n` +
-      `- Tone: Professional, analytical, encouraging, but direct about performance issues.\n` +
-      `- Formatting: Use Markdown tables for comparing metrics. Use code blocks for negative keyword lists.\n` +
-      `- When taking an action, clearly state what you're doing and why before calling the tool.\n\n` +
-      `Current campaign context:\n` +
-      `${campaignData ? JSON.stringify(campaignData, null, 2) : "No specific campaign data provided. Use general best practices."}\n\n` +
-      `Format your responses in a clear, structured way. Use bullet points for lists and bold text for important metrics. REMEMBER: Short paragraphs. No giant blocks of text.`;
+    const systemPrompt = buildSystemPrompt(campaignData);
 
     const geminiModel = String(model || "gemini-2.5-flash").trim();
     const contents = Array.isArray(messages)
@@ -235,6 +287,43 @@ serve(async (req) => {
 
     if (enableTools) {
       requestBody.tools = [{ functionDeclarations: toolDefinitions }];
+    }
+
+    // Agentic loop: resolve queryAdsData tool calls server-side when CLI credentials are present
+    if (enableTools && providerToken && customerId) {
+      const nonStreamUrl =
+        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModel)}` +
+        `:generateContent?key=${encodeURIComponent(String(apiKey))}`;
+
+      const { contents: resolvedContents, finalText } = await resolveQueryAdsData(
+        nonStreamUrl,
+        requestBody,
+        providerToken,
+        customerId,
+      );
+
+      if (finalText !== null) {
+        // Stream the resolved final text without an extra Gemini call
+        const encoder = new TextEncoder();
+        const words = finalText.split(/(?<=\s)/);
+        const stream = new ReadableStream({
+          start(controller) {
+            for (const chunk of words) {
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: chunk } }] })}\n\n`),
+              );
+            }
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            controller.close();
+          },
+        });
+        return new Response(stream, {
+          headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
+        });
+      }
+
+      // queryAdsData loop exhausted without final text — continue with updated contents
+      requestBody.contents = resolvedContents;
     }
 
     const upstream = await fetch(url, {

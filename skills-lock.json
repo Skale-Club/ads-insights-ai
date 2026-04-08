@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "google-ads-manager": {
+      "source": "claude-office-skills/skills",
+      "sourceType": "github",
+      "computedHash": "d52a1b94fbe1c89637ef044ec5ba286bc4b3ff1806d37ffed92a9b773df4ab69"
+    }
+  }
+}

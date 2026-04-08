@@ -14,6 +14,35 @@ interface UseGoogleAdsReportOptions {
   enabled?: boolean;
 }
 
+const CACHE_TTL_MS = 5 * 60 * 1000;
+
+function getCacheKey(reportType: ReportType, customerId: string, startDate: string, endDate: string): string {
+  return `adsinsight:cache:${reportType}:${customerId}:${startDate}:${endDate}`;
+}
+
+function readCache(key: string): unknown | null {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const { data, ts } = JSON.parse(raw);
+    if (Date.now() - ts > CACHE_TTL_MS) {
+      localStorage.removeItem(key);
+      return null;
+    }
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+function writeCache(key: string, data: unknown): void {
+  try {
+    localStorage.setItem(key, JSON.stringify({ data, ts: Date.now() }));
+  } catch {
+    // localStorage full or unavailable — silently skip
+  }
+}
+
 function formatDate(date: Date): string {
   return format(date, 'yyyy-MM-dd');
 }
@@ -25,6 +54,10 @@ async function fetchReport(
   endDate: string,
   providerToken: string,
 ) {
+  const cacheKey = getCacheKey(reportType, customerId, startDate, endDate);
+  const cached = readCache(cacheKey);
+  if (cached !== null) return cached;
+
   const { data, error: fnError } = await supabase.functions.invoke('google-ads-reports', {
     body: { providerToken, customerId, reportType, startDate, endDate },
   });
@@ -32,7 +65,9 @@ async function fetchReport(
   if (fnError) throw new Error(fnError.message);
   if (data?.error) throw new Error(data.error);
 
-  return data?.data;
+  const result = data?.data;
+  writeCache(cacheKey, result);
+  return result;
 }
 
 export function useGoogleAdsReport<T = any>(
@@ -55,8 +90,6 @@ export function useGoogleAdsReport<T = any>(
     queryFn: () => fetchReport(reportType, customerId!, startDate, endDate, token!),
     enabled: (options.enabled !== false) && !!customerId && !!token,
     staleTime: 5 * 60 * 1000,
-    retry: 3,
-    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
     onError: (err) => {
       const message = err instanceof Error ? err.message : String(err);
       const isUnauth =

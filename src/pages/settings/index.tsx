@@ -5,6 +5,7 @@ import { PrivacySection } from './PrivacySection';
 import { AISettingsCard } from '@/components/settings/AISettingsCard';
 import { AlertSettingsCard } from '@/components/settings/AlertSettings';
 import { DataSettingsCard } from '@/components/settings/DataSettingsCard';
+import { ClaudeCodeSection } from '@/components/settings/ClaudeCodeSection';
 
 export default function SettingsPage() {
   return (
@@ -21,6 +22,7 @@ export default function SettingsPage() {
       <AISettingsCard />
       <AlertSettingsCard />
       <DataSettingsCard />
+      <ClaudeCodeSection />
       <EnvironmentSection />
       <PrivacySection />
     </div>

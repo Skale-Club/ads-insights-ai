@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { z } from "npm:zod@3.22.4";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -1276,131 +1277,6 @@ async function fetchDemographicsLocation(
 }
 
 
-function transformNegativeKeywords(results: any[]) {
-  return results.map((row) => {
-    const id = row.adGroupCriterion?.criterionId;
-    const matchType = (row.adGroupCriterion?.keyword?.matchType || "").toLowerCase();
-    const status = (row.adGroupCriterion?.status || "").toLowerCase();
-
-    return {
-      id: String(id),
-      keyword: row.adGroupCriterion?.keyword?.text || "",
-      matchType: matchType === "exact" ? "exact" : matchType === "phrase" ? "phrase" : "broad",
-      status: status === "enabled" ? "enabled" : "paused",
-      adGroup: row.adGroup?.name || "",
-      campaign: row.campaign?.name || "",
-      level: "ad_group",
-    };
-  });
-}
-
-async function fetchNegativeKeywordsBothLevels(
-  cleanCustomerId: string,
-  headers: Record<string, string>
-): Promise<any[]> {
-  const adGroupQuery = `
-    SELECT
-    ad_group_criterion.criterion_id,
-      ad_group_criterion.keyword.text,
-      ad_group_criterion.keyword.match_type,
-      ad_group_criterion.status,
-      ad_group.name,
-      campaign.name
-    FROM ad_group_criterion
-    WHERE ad_group_criterion.negative = true
-      AND ad_group_criterion.status != 'REMOVED'
-      `;
-
-  const campaignQuery = `
-    SELECT
-    campaign_criterion.criterion_id,
-      campaign_criterion.keyword.text,
-      campaign_criterion.keyword.match_type,
-      campaign_criterion.status,
-      campaign.name
-    FROM campaign_criterion
-    WHERE campaign_criterion.negative = true
-      AND campaign_criterion.status != 'REMOVED'
-      `;
-
-  console.log(`[google - ads - reports] Fetching negative keywords for customer ${cleanCustomerId}`);
-
-  const adGroupResponse = await fetch(
-    `https://googleads.googleapis.com/${API_VERSION}/customers/${cleanCustomerId}/googleAds:searchStream`,
-    {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ query: adGroupQuery }),
-    }
-  );
-
-  const campaignResponse = await fetch(
-    `https://googleads.googleapis.com/${API_VERSION}/customers/${cleanCustomerId}/googleAds:searchStream`,
-    {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ query: campaignQuery }),
-    }
-  );
-
-  let adGroupResults: any[] = [];
-  let campaignResults: any[] = [];
-
-  if (adGroupResponse.ok) {
-    const data = await adGroupResponse.json();
-    adGroupResults = data.reduce((acc: any[], batch: any) => acc.concat(batch.results || []), []);
-    console.log(`[google-ads-reports] Ad group negative keywords: ${adGroupResults.length}`);
-  } else {
-    const errorText = await adGroupResponse.text();
-    console.error(`[google-ads-reports] Ad group query failed (${adGroupResponse.status}):`, errorText);
-  }
-
-  if (campaignResponse.ok) {
-    const data = await campaignResponse.json();
-    campaignResults = data.reduce((acc: any[], batch: any) => acc.concat(batch.results || []), []);
-    console.log(`[google-ads-reports] Campaign negative keywords: ${campaignResults.length}`);
-  } else {
-    const errorText = await campaignResponse.text();
-    console.error(`[google-ads-reports] Campaign query failed (${campaignResponse.status}):`, errorText);
-  }
-
-  const adGroupNegatives = adGroupResults.map((row) => {
-    const id = row.adGroupCriterion?.criterionId;
-    const matchType = (row.adGroupCriterion?.keyword?.matchType || "").toLowerCase();
-    const status = (row.adGroupCriterion?.status || "").toLowerCase();
-
-    return {
-      id: String(id),
-      keyword: row.adGroupCriterion?.keyword?.text || "",
-      matchType: matchType === "exact" ? "exact" : matchType === "phrase" ? "phrase" : "broad",
-      status: status === "enabled" ? "enabled" : "paused",
-      adGroup: row.adGroup?.name || "",
-      campaign: row.campaign?.name || "",
-      level: "ad_group",
-    };
-  });
-
-  const campaignNegatives = campaignResults.map((row) => {
-    const id = row.campaignCriterion?.criterionId;
-    const matchType = (row.campaignCriterion?.keyword?.matchType || "").toLowerCase();
-    const status = (row.campaignCriterion?.status || "").toLowerCase();
-
-    return {
-      id: `campaign-${id}`,
-      keyword: row.campaignCriterion?.keyword?.text || "",
-      matchType: matchType === "exact" ? "exact" : matchType === "phrase" ? "phrase" : "broad",
-      status: status === "enabled" ? "enabled" : "paused",
-      adGroup: "",
-      campaign: row.campaign?.name || "",
-      level: "campaign",
-    };
-  });
-
-  console.log(`[google-ads-reports] negativeKeywords: ${adGroupNegatives.length} ad group level, ${campaignNegatives.length} campaign level`);
-
-  return [...adGroupNegatives, ...campaignNegatives];
-}
-
 async function fetchNegativeKeywordsWithErrorDetails(
   cleanCustomerId: string,
   headers: Record<string, string>
@@ -1536,12 +1412,29 @@ serve(async (req) => {
       throw new Error("GOOGLE_ADS_DEVELOPER_TOKEN not configured");
     }
 
-    const { providerToken, customerId, reportType, startDate, endDate } = await req.json();
+    const ReportRequestSchema = z.object({
+      providerToken: z.string().min(1, "providerToken is required"),
+      customerId: z.string().min(1, "customerId is required"),
+      reportType: z.enum([
+        "overview", "campaigns", "keywords", "search_terms", "searchTerms",
+        "daily_performance", "adGroups", "ads", "audiences", "budgets",
+        "conversions", "negativeKeywords", "demographics_age",
+        "demographics_gender", "demographics_device", "demographics_location",
+      ]),
+      startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "startDate must be YYYY-MM-DD"),
+      endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "endDate must be YYYY-MM-DD"),
+    });
 
-    if (!providerToken) throw new Error("Provider token not provided");
-    if (!customerId) throw new Error("Customer ID not provided");
-    if (!reportType) throw new Error("Report type not provided");
-    if (!startDate || !endDate) throw new Error("Date range not provided");
+    const body = await req.json();
+    const parseResult = ReportRequestSchema.safeParse(body);
+    if (!parseResult.success) {
+      const messages = parseResult.error.errors.map((e) => e.message).join(", ");
+      return new Response(
+        JSON.stringify({ error: `Invalid request: ${messages}` }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    const { providerToken, customerId, reportType, startDate, endDate } = parseResult.data;
 
     console.log(`[google-ads-reports] type=${reportType}, customer=${customerId}, range=${startDate}..${endDate}`);
 

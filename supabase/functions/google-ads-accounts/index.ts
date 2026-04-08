@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { z } from "npm:zod@3.22.4";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -19,11 +20,15 @@ serve(async (req) => {
       throw new Error("GOOGLE_ADS_DEVELOPER_TOKEN not configured");
     }
 
-    const { providerToken } = await req.json();
-
-    if (!providerToken) {
-      throw new Error("Provider token not provided");
+    const body = await req.json();
+    const parseResult = z.object({ providerToken: z.string().min(1) }).safeParse(body);
+    if (!parseResult.success) {
+      return new Response(
+        JSON.stringify({ error: "providerToken is required" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
+    const { providerToken } = parseResult.data;
 
     // Explicitly logging version for debug
     console.log("Attempting to connect to Google Ads API v20...");
@@ -72,10 +77,9 @@ serve(async (req) => {
         const errorText = await searchResponse.text();
         console.error("Google Ads API Search error:", errorText);
 
-        // Return 200 with error object so client can display the specific API error
         return new Response(
           JSON.stringify({ error: `Google Ads API Error (${searchResponse.status}): ${errorText}` }),
-          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          { status: searchResponse.status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
@@ -138,7 +142,7 @@ serve(async (req) => {
 
     return new Response(
       JSON.stringify({ error: errorMessage }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });

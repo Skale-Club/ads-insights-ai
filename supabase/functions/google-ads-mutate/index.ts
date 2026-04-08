@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { z } from "npm:zod@3.22.4";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -149,20 +150,36 @@ serve(async (req) => {
       throw new Error("GOOGLE_ADS_DEVELOPER_TOKEN not configured");
     }
 
-    const {
-      providerToken,
-      customerId,
-      action,
-      campaignId,
-      newStatus,
-      keywords,
-      keywordText,
-      matchType,
-    } = await req.json();
+    const MutateRequestSchema = z.object({
+      providerToken: z.string().min(1, "providerToken is required"),
+      customerId: z.string().min(1, "customerId is required"),
+      action: z.enum(["updateCampaignStatus", "addNegativeKeywords", "adjustBid", "updateCampaignBudget", "createBudget"], {
+        errorMap: () => ({ message: "action must be updateCampaignStatus, addNegativeKeywords, adjustBid, updateCampaignBudget, or createBudget" }),
+      }),
+      campaignId: z.string().optional(),
+      newStatus: z.string().optional(),
+      keywords: z.array(z.string()).optional(),
+      keywordText: z.string().optional(),
+      matchType: z.string().optional(),
+      adGroupId: z.string().optional(),
+      keywordResourceName: z.string().optional(),
+      newBidMicros: z.number().positive().optional(),
+      campaignBudgetId: z.string().optional(),
+      newAmountMicros: z.number().positive().optional(),
+      budgetName: z.string().optional(),
+      deliveryMethod: z.enum(["STANDARD", "ACCELERATED"]).optional(),
+    });
 
-    if (!providerToken) throw new Error("Provider token not provided");
-    if (!customerId) throw new Error("Customer ID not provided");
-    if (!action) throw new Error("Action not provided");
+    const body = await req.json();
+    const parseResult = MutateRequestSchema.safeParse(body);
+    if (!parseResult.success) {
+      const messages = parseResult.error.errors.map((e) => e.message).join(", ");
+      return new Response(
+        JSON.stringify({ error: `Invalid request: ${messages}` }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    const { providerToken, customerId, action, campaignId, newStatus, keywords, keywordText, matchType, adGroupId, keywordResourceName, newBidMicros, campaignBudgetId, newAmountMicros, budgetName, deliveryMethod } = parseResult.data;
 
     const cleanCustomerId = cleanCustomerIdLike(customerId);
 
@@ -219,7 +236,7 @@ serve(async (req) => {
         console.error(`[google-ads-mutate] API error (${mutateResponse.status}):`, errorText);
         return new Response(
           JSON.stringify({ error: `Google Ads API Error (${mutateResponse.status}): ${errorText}` }),
-          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          { status: mutateResponse.status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
@@ -270,7 +287,7 @@ serve(async (req) => {
         console.error(`[google-ads-mutate] API error (${mutateResponse.status}):`, errorText);
         return new Response(
           JSON.stringify({ error: `Google Ads API Error (${mutateResponse.status}): ${errorText}` }),
-          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          { status: mutateResponse.status, headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
       }
 
@@ -281,13 +298,175 @@ serve(async (req) => {
       );
     }
 
+    if (action === "adjustBid") {
+      if (!newBidMicros) {
+        return new Response(
+          JSON.stringify({ error: "Invalid request: newBidMicros is required for adjustBid" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+      if (!campaignId && !adGroupId && !keywordResourceName) {
+        return new Response(
+          JSON.stringify({ error: "Invalid request: adjustBid requires at least one of campaignId, adGroupId, or keywordResourceName" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      let mutateUrl: string;
+      let mutateBody: unknown;
+
+      if (keywordResourceName) {
+        mutateUrl = `https://googleads.googleapis.com/${API_VERSION}/customers/${cleanCustomerId}/adGroupCriteria:mutate`;
+        mutateBody = {
+          operations: [{
+            update: { resourceName: keywordResourceName, cpcBidMicros: String(newBidMicros) },
+            updateMask: { paths: ["cpc_bid_micros"] },
+          }],
+        };
+      } else if (adGroupId) {
+        const adGroupResourceName = adGroupId.includes("/adGroups/")
+          ? adGroupId
+          : `customers/${cleanCustomerId}/adGroups/${adGroupId.replace(/[^0-9]/g, "")}`;
+        mutateUrl = `https://googleads.googleapis.com/${API_VERSION}/customers/${cleanCustomerId}/adGroups:mutate`;
+        mutateBody = {
+          operations: [{
+            update: { resourceName: adGroupResourceName, cpcBidMicros: String(newBidMicros) },
+            updateMask: { paths: ["cpc_bid_micros"] },
+          }],
+        };
+      } else {
+        const resourceName = buildCampaignResourceName(cleanCustomerId, campaignId);
+        if (!resourceName) throw new Error("Failed to build campaign resourceName");
+        mutateUrl = `https://googleads.googleapis.com/${API_VERSION}/customers/${cleanCustomerId}/campaigns:mutate`;
+        mutateBody = {
+          operations: [{
+            update: { resourceName, manualCpc: { enhancedCpcEnabled: false } },
+            updateMask: { paths: ["manual_cpc"] },
+          }],
+        };
+      }
+
+      const mutateResponse = await fetch(mutateUrl, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(mutateBody),
+      });
+
+      if (!mutateResponse.ok) {
+        const errorText = await mutateResponse.text();
+        console.error(`[google-ads-mutate] adjustBid API error (${mutateResponse.status}):`, errorText);
+        return new Response(
+          JSON.stringify({ error: `Google Ads API Error (${mutateResponse.status}): ${errorText}` }),
+          { status: mutateResponse.status, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      const result = await mutateResponse.json();
+      return new Response(
+        JSON.stringify({ success: true, result }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    if (action === "updateCampaignBudget") {
+      if (!campaignBudgetId) {
+        return new Response(
+          JSON.stringify({ error: "Invalid request: campaignBudgetId is required for updateCampaignBudget" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+      if (!newAmountMicros) {
+        return new Response(
+          JSON.stringify({ error: "Invalid request: newAmountMicros is required for updateCampaignBudget" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      const budgetResourceName = campaignBudgetId.includes("/campaignBudgets/")
+        ? campaignBudgetId
+        : `customers/${cleanCustomerId}/campaignBudgets/${campaignBudgetId.replace(/[^0-9]/g, "")}`;
+
+      const mutateBody = {
+        operations: [{
+          update: { resourceName: budgetResourceName, amountMicros: String(newAmountMicros) },
+          updateMask: { paths: ["amount_micros"] },
+        }],
+      };
+
+      const mutateResponse = await fetch(
+        `https://googleads.googleapis.com/${API_VERSION}/customers/${cleanCustomerId}/campaignBudgets:mutate`,
+        { method: "POST", headers, body: JSON.stringify(mutateBody) },
+      );
+
+      if (!mutateResponse.ok) {
+        const errorText = await mutateResponse.text();
+        console.error(`[google-ads-mutate] updateCampaignBudget API error (${mutateResponse.status}):`, errorText);
+        return new Response(
+          JSON.stringify({ error: `Google Ads API Error (${mutateResponse.status}): ${errorText}` }),
+          { status: mutateResponse.status, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      const result = await mutateResponse.json();
+      return new Response(
+        JSON.stringify({ success: true, result }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    if (action === "createBudget") {
+      if (!budgetName) {
+        return new Response(
+          JSON.stringify({ error: "Invalid request: budgetName is required for createBudget" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+      if (!newAmountMicros) {
+        return new Response(
+          JSON.stringify({ error: "Invalid request: newAmountMicros is required for createBudget" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      const mutateBody = {
+        operations: [{
+          create: {
+            name: budgetName,
+            amountMicros: String(newAmountMicros),
+            deliveryMethod: deliveryMethod ?? "STANDARD",
+          },
+        }],
+      };
+
+      const mutateResponse = await fetch(
+        `https://googleads.googleapis.com/${API_VERSION}/customers/${cleanCustomerId}/campaignBudgets:mutate`,
+        { method: "POST", headers, body: JSON.stringify(mutateBody) },
+      );
+
+      if (!mutateResponse.ok) {
+        const errorText = await mutateResponse.text();
+        console.error(`[google-ads-mutate] createBudget API error (${mutateResponse.status}):`, errorText);
+        return new Response(
+          JSON.stringify({ error: `Google Ads API Error (${mutateResponse.status}): ${errorText}` }),
+          { status: mutateResponse.status, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      const result = await mutateResponse.json();
+      const resourceName = result?.results?.[0]?.resourceName;
+      return new Response(
+        JSON.stringify({ success: true, resourceName }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     throw new Error(`Unknown action: ${action}`);
   } catch (error) {
     console.error("[google-ads-mutate] Error:", error);
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
     return new Response(
       JSON.stringify({ error: errorMessage }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });

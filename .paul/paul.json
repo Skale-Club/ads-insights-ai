@@ -1,0 +1,25 @@
+{
+  "name": "ads-insights-ai",
+  "version": "1.2.0",
+  "milestone": {
+    "name": "google-ads-manager Skill Integration",
+    "version": "1.2.0",
+    "status": "complete"
+  },
+  "phase": {
+    "number": 9,
+    "name": "Human Approval Loop",
+    "status": "complete"
+  },
+  "loop": {
+    "plan": null,
+    "position": "IDLE"
+  },
+  "timestamps": {
+    "created_at": "2026-04-08T00:00:00Z",
+    "updated_at": "2026-04-08T00:00:00Z"
+  },
+  "satellite": {
+    "groom": true
+  }
+}
