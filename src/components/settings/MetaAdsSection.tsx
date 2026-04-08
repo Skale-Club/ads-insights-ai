@@ -6,15 +6,14 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDashboard } from '@/contexts/DashboardContext';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase, SUPABASE_URL } from '@/integrations/supabase/client';
 
-const META_APP_ID = import.meta.env.VITE_META_APP_ID as string | undefined;
-const META_REDIRECT_URI = import.meta.env.VITE_META_REDIRECT_URI as string | undefined;
+const META_REDIRECT_URI = `${SUPABASE_URL}/functions/v1/meta-auth`;
 
-function buildOAuthUrl(userId: string): string {
+function buildOAuthUrl(userId: string, metaAppId: string): string {
   const params = new URLSearchParams({
-    client_id: META_APP_ID ?? '',
-    redirect_uri: META_REDIRECT_URI ?? '',
+    client_id: metaAppId,
+    redirect_uri: META_REDIRECT_URI,
     scope: 'ads_read,ads_management,business_management',
     state: userId,
     response_type: 'code',
@@ -32,6 +31,20 @@ export function MetaAdsSection() {
     expires_at: string;
   } | null>(null);
   const [loadingAccounts, setLoadingAccounts] = useState(false);
+  const [metaAppId, setMetaAppId] = useState<string | null>(null);
+  const [configError, setConfigError] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase.functions
+      .invoke('get-platform-config')
+      .then(({ data, error }) => {
+        if (error || data?.error) {
+          setConfigError(data?.error ?? error?.message ?? 'Meta App not configured');
+        } else {
+          setMetaAppId(data.metaAppId);
+        }
+      });
+  }, []);
 
   // Load connection status
   useEffect(() => {
@@ -85,15 +98,15 @@ export function MetaAdsSection() {
 
   const handleConnect = () => {
     if (!user?.id) return;
-    if (!META_APP_ID || !META_REDIRECT_URI) {
+    if (!metaAppId) {
       toast({
         title: 'Meta App not configured',
-        description: 'Set VITE_META_APP_ID and VITE_META_REDIRECT_URI in your .env.local',
+        description: configError ?? 'Add META_APP_ID in Supabase Dashboard → Edge Functions → Secrets',
         variant: 'destructive',
       });
       return;
     }
-    window.location.href = buildOAuthUrl(user.id);
+    window.location.href = buildOAuthUrl(user.id, metaAppId);
   };
 
   const handleDisconnect = async () => {
@@ -139,11 +152,18 @@ export function MetaAdsSection() {
       <CardContent className="space-y-4">
         {!isConnected ? (
           <div className="space-y-3">
-            <div className="flex items-start gap-2 rounded-md bg-muted p-3 text-sm text-muted-foreground">
-              <XCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-              <span>Not connected. Save your Company Profile first, then connect Meta Ads.</span>
-            </div>
-            <Button onClick={handleConnect}>Connect Meta Ads</Button>
+            {configError ? (
+              <div className="flex items-start gap-2 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                <XCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                <span>{configError}</span>
+              </div>
+            ) : (
+              <div className="flex items-start gap-2 rounded-md bg-muted p-3 text-sm text-muted-foreground">
+                <XCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                <span>Not connected. Save your Company Profile first, then connect Meta Ads.</span>
+              </div>
+            )}
+            <Button onClick={handleConnect} disabled={!!configError}>Connect Meta Ads</Button>
           </div>
         ) : (
           <div className="space-y-4">

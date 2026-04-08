@@ -56,3 +56,6 @@ verify_jwt = false
 
 [functions.get-meta-cli-session]
 verify_jwt = false
+
+[functions.get-platform-config]
+verify_jwt = false
