@@ -7,6 +7,7 @@ import {
   Loader2,
   Zap,
   Clock,
+  ImageOff,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -17,6 +18,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useGoogleAdsReport } from '@/hooks/useGoogleAdsReport';
+import { useMetaReport } from '@/hooks/useMetaReport';
 
 interface UserAISettings {
   openai_api_key: string | null;
@@ -84,6 +86,71 @@ type SearchTermRow = {
   cpa: number;
 };
 
+type MetaOverviewData = {
+  spend: number;
+  reach: number;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  cpc: number;
+  cpm: number;
+  roas: number;
+  conversions: number;
+  costPerConversion: number;
+};
+
+type MetaCampaignRow = {
+  id: string;
+  name: string;
+  status: string;
+  objective: string;
+  budgetType: string;
+  budget: number;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  roas: number;
+  results: number;
+};
+
+type MetaAdSetRow = {
+  id: string;
+  name: string;
+  campaignId: string;
+  status: string;
+  targetingSummary: string;
+  dailyBudget: number;
+  spend: number;
+  impressions: number;
+  ctr: number;
+  roas: number;
+};
+
+type MetaAdRow = {
+  id: string;
+  name: string;
+  adsetId: string;
+  status: string;
+  title: string;
+  body: string;
+  imageUrl: string | null;
+  spend: number;
+  impressions: number;
+  ctr: number;
+  cpc: number;
+  roas: number;
+};
+
+type MetaPlacementRow = {
+  placement: string;
+  impressions: number;
+  clicks: number;
+  spend: number;
+  ctr: number;
+  cpc: number;
+};
+
 interface Recommendation {
   id: string;
   title: string;
@@ -136,10 +203,12 @@ const categoryIcons = {
 };
 
 export default function RecommendationsPage() {
-  const { selectedAccount, dateRange, dateRangePreset } = useDashboard();
+  const { selectedAccount, dateRange, dateRangePreset, platform, selectedMetaAccount } = useDashboard();
   const { user } = useAuth();
   const { toast } = useToast();
   const [aiSettings, setAiSettings] = useState<{ apiKey: string | null; model: string } | null>(null);
+
+  const isMeta = platform === 'meta';
 
   // Load AI settings
   useEffect(() => {
@@ -159,14 +228,164 @@ export default function RecommendationsPage() {
       });
   }, [user?.id]);
 
-  const currencyCode = safeCurrency(selectedAccount?.currencyCode);
-
-  const { data: overview, isLoading: isLoadingOverview } = useGoogleAdsReport<OverviewData>('overview');
-  const { data: campaigns, isLoading: isLoadingCampaigns } = useGoogleAdsReport<CampaignRow[]>('campaigns');
-  const { data: keywords, isLoading: isLoadingKeywords } = useGoogleAdsReport<KeywordRow[]>('keywords');
-  const { data: searchTerms, isLoading: isLoadingSearchTerms } = useGoogleAdsReport<SearchTermRow[]>('search_terms');
+  const { data: overview, isLoading: isLoadingOverview } = useGoogleAdsReport<OverviewData>('overview', { enabled: !isMeta });
+  const { data: campaigns, isLoading: isLoadingCampaigns } = useGoogleAdsReport<CampaignRow[]>('campaigns', { enabled: !isMeta });
+  const { data: keywords, isLoading: isLoadingKeywords } = useGoogleAdsReport<KeywordRow[]>('keywords', { enabled: !isMeta });
+  const { data: searchTerms, isLoading: isLoadingSearchTerms } = useGoogleAdsReport<SearchTermRow[]>('search_terms', { enabled: !isMeta });
 
   const isLoadingData = isLoadingOverview || isLoadingCampaigns || isLoadingKeywords || isLoadingSearchTerms;
+
+  // Meta reports
+  const { data: metaOverview, isLoading: isLoadingMetaOverview } = useMetaReport<MetaOverviewData>('overview', { enabled: isMeta });
+  const { data: metaCampaigns, isLoading: isLoadingMetaCampaigns } = useMetaReport<MetaCampaignRow[]>('campaigns', { enabled: isMeta });
+  const { data: metaAdSets, isLoading: isLoadingMetaAdSets } = useMetaReport<MetaAdSetRow[]>('adsets', { enabled: isMeta });
+  const { data: metaAds, isLoading: isLoadingMetaAds } = useMetaReport<MetaAdRow[]>('ads', { enabled: isMeta });
+  const { data: metaPlacements } = useMetaReport<MetaPlacementRow[]>('insights_by_placement', { enabled: isMeta });
+
+  const isLoadingMetaData = isLoadingMetaOverview || isLoadingMetaCampaigns || isLoadingMetaAdSets || isLoadingMetaAds;
+
+  const metaRecommendations = useMemo<Recommendation[]>(() => {
+    if (!isMeta || !selectedMetaAccount) return [];
+    const recs: Recommendation[] = [];
+    const currency = selectedMetaAccount.currency ?? 'USD';
+
+    const activeCampaigns = (metaCampaigns ?? []).filter((c) => c.status === 'ACTIVE');
+    const activeAds = (metaAds ?? []).filter((a) => a.status === 'ACTIVE');
+
+    // 1. Low ROAS campaigns (ROAS tracked but below 1.0, with real spend)
+    const losingCampaigns = activeCampaigns
+      .filter((c) => c.roas > 0 && c.roas < 1.0 && c.spend >= 50)
+      .sort((a, b) => b.spend - a.spend)
+      .slice(0, 5);
+
+    if (losingCampaigns.length > 0) {
+      const totalWaste = losingCampaigns.reduce((acc, c) => acc + c.spend, 0);
+      recs.push({
+        id: 'meta-low-roas',
+        title: 'Campaigns spending more than they return — pause or restructure',
+        category: 'budget',
+        impact: totalWaste >= 300 ? 'high' : 'medium',
+        effort: 'low',
+        rationale: `${losingCampaigns.length} active campaign(s) have ROAS below 1.0x with ${formatCurrency(totalWaste, currency)} total spend — spending more than the revenue they generate.`,
+        metrics: [
+          { label: 'Total Spend at Risk', value: formatCurrency(totalWaste, currency) },
+          { label: 'Campaigns Flagged', value: formatNumber(losingCampaigns.length) },
+        ],
+        actions: losingCampaigns.map((c) => `"${c.name}": ROAS ${c.roas.toFixed(2)}x, spend ${formatCurrency(c.spend, currency)}. Consider pausing or reallocating budget.`),
+        confidence: 'high',
+      });
+    }
+
+    // 2. Creative fatigue — ads with high impressions and low CTR
+    const accountAvgCtr = metaOverview?.ctr ?? 0;
+    const fatigueThreshold = Math.min(accountAvgCtr * 0.5, 0.5);
+    const fatiguedAds = activeAds
+      .filter((a) => a.impressions >= 3000 && a.ctr < fatigueThreshold && a.spend >= 15)
+      .sort((a, b) => b.impressions - a.impressions)
+      .slice(0, 6);
+
+    if (fatiguedAds.length > 0) {
+      recs.push({
+        id: 'meta-creative-fatigue',
+        title: 'Active ads showing creative fatigue — CTR well below account average',
+        category: 'creative',
+        impact: fatiguedAds.length >= 3 ? 'high' : 'medium',
+        effort: 'high',
+        rationale: `${fatiguedAds.length} active ad(s) have CTR below ${fatigueThreshold.toFixed(2)}% (account avg: ${formatPct(accountAvgCtr)}) with significant impressions — audience may be fatigued.`,
+        metrics: [
+          { label: 'Ads Flagged', value: formatNumber(fatiguedAds.length) },
+          { label: 'Account Avg CTR', value: formatPct(accountAvgCtr) },
+        ],
+        actions: fatiguedAds.map((a) => {
+          const label = a.title || a.name;
+          return `"${label}": ${formatNumber(a.impressions)} impressions, ${formatPct(a.ctr)} CTR, ${formatCurrency(a.spend, currency)} spend. Refresh creative copy or visual.`;
+        }),
+        confidence: 'medium',
+      });
+    }
+
+    // 3. Underperforming placements
+    if (metaPlacements && metaPlacements.length > 0) {
+      const totalPlacementSpend = metaPlacements.reduce((acc, p) => acc + p.spend, 0);
+      const badPlacements = metaPlacements
+        .filter((p) => p.ctr < 0.3 && p.spend >= totalPlacementSpend * 0.1)
+        .sort((a, b) => b.spend - a.spend);
+
+      if (badPlacements.length > 0) {
+        const wastedSpend = badPlacements.reduce((acc, p) => acc + p.spend, 0);
+        recs.push({
+          id: 'meta-bad-placements',
+          title: 'Placements with high spend and very low CTR',
+          category: 'targeting',
+          impact: wastedSpend >= 200 ? 'high' : 'medium',
+          effort: 'low',
+          rationale: `${badPlacements.length} placement(s) account for ${formatCurrency(wastedSpend, currency)} spend with CTR below 0.3% — consider excluding them.`,
+          metrics: [
+            { label: 'Spend on Low-CTR Placements', value: formatCurrency(wastedSpend, currency) },
+            { label: 'Placements Flagged', value: formatNumber(badPlacements.length) },
+          ],
+          actions: badPlacements.map((p) => `${p.placement}: ${formatPct(p.ctr)} CTR, ${formatCurrency(p.spend, currency)} spend (${formatPct((p.spend / totalPlacementSpend) * 100)} of total). Consider excluding in ad set placement settings.`),
+          confidence: 'medium',
+        });
+      }
+    }
+
+    // 4. High CPM ad sets vs account average
+    const accountAvgCpm = metaOverview?.cpm ?? 0;
+    if (accountAvgCpm > 0) {
+      const expensiveAdSets = (metaAdSets ?? [])
+        .filter((s) => s.status === 'ACTIVE' && s.impressions > 0 && s.spend >= 30)
+        .map((s) => ({ ...s, cpm: (s.spend / s.impressions) * 1000 }))
+        .filter((s) => s.cpm > accountAvgCpm * 2)
+        .sort((a, b) => b.cpm - a.cpm)
+        .slice(0, 4);
+
+      if (expensiveAdSets.length > 0) {
+        recs.push({
+          id: 'meta-high-cpm',
+          title: 'Ad sets with CPM more than 2× the account average',
+          category: 'targeting',
+          impact: 'medium',
+          effort: 'medium',
+          rationale: `${expensiveAdSets.length} active ad set(s) have CPM over ${formatCurrency(accountAvgCpm * 2, currency)} (account avg: ${formatCurrency(accountAvgCpm, currency)}). Narrow or over-competitive targeting may be inflating costs.`,
+          metrics: [
+            { label: 'Account Avg CPM', value: formatCurrency(accountAvgCpm, currency) },
+            { label: 'Ad Sets Flagged', value: formatNumber(expensiveAdSets.length) },
+          ],
+          actions: expensiveAdSets.map((s) => `"${s.name}": CPM ${formatCurrency(s.cpm, currency)}, targeting: ${s.targetingSummary}. Try broadening audience or removing overlapping interests.`),
+          confidence: 'medium',
+        });
+      }
+    }
+
+    // 5. Best ROAS campaign — concentrate budget
+    const bestRoas = activeCampaigns
+      .filter((c) => c.roas >= 2.0 && c.spend >= 50)
+      .sort((a, b) => b.roas - a.roas)[0];
+
+    if (bestRoas) {
+      recs.push({
+        id: 'meta-budget-focus',
+        title: 'Concentrate more budget on your highest-ROAS campaign',
+        category: 'budget',
+        impact: 'medium',
+        effort: 'low',
+        rationale: `"${bestRoas.name}" has a strong ROAS of ${bestRoas.roas.toFixed(2)}x. If budget-constrained, shift spend from lower-performing campaigns here.`,
+        metrics: [
+          { label: 'ROAS', value: `${bestRoas.roas.toFixed(2)}x` },
+          { label: 'Current Spend', value: formatCurrency(bestRoas.spend, currency) },
+          { label: 'Results', value: formatNumber(bestRoas.results) },
+        ],
+        actions: [
+          'Increase daily/lifetime budget by 20–30% and monitor CPA for 3–5 days.',
+          'Ensure creative is not fatigued before scaling (check frequency and CTR trend).',
+        ],
+        confidence: 'low',
+      });
+    }
+
+    return recs;
+  }, [isMeta, selectedMetaAccount, metaCampaigns, metaAdSets, metaAds, metaPlacements, metaOverview]);
 
   const campaignContext = useMemo(() => {
     if (!selectedAccount) return null;
@@ -397,6 +616,15 @@ export default function RecommendationsPage() {
   }, [keywords, searchTerms, campaigns, overview, currencyCode]);
 
   const summary = useMemo(() => {
+    if (isMeta) {
+      const highImpact = metaRecommendations.filter((r) => r.impact === 'high').length;
+      const quickWins = metaRecommendations.filter((r) => r.effort === 'low').length;
+      const losingSpend = (metaCampaigns ?? [])
+        .filter((c) => c.roas > 0 && c.roas < 1.0 && c.spend >= 50)
+        .reduce((acc, c) => acc + c.spend, 0);
+      return { highImpact, quickWins, potentialSavings: losingSpend };
+    }
+
     const highImpact = recommendations.filter((r) => r.impact === 'high').length;
     const quickWins = recommendations.filter((r) => r.effort === 'low').length;
 
@@ -410,12 +638,26 @@ export default function RecommendationsPage() {
       .reduce((acc, t) => acc + (t.cost || 0), 0);
 
     return { highImpact, quickWins, potentialSavings: wastedKeywords + wastedTerms };
-  }, [recommendations, keywords, searchTerms]);
+  }, [isMeta, recommendations, metaRecommendations, keywords, searchTerms, metaCampaigns]);
 
-  if (!selectedAccount) {
+  const activeRecommendations = isMeta ? metaRecommendations : recommendations;
+  const isLoadingActive = isMeta ? isLoadingMetaData : isLoadingData;
+  const currencyCode = isMeta
+    ? safeCurrency(selectedMetaAccount?.currency)
+    : safeCurrency(selectedAccount?.currencyCode);
+
+  if (!isMeta && !selectedAccount) {
     return (
       <div className="flex h-[50vh] items-center justify-center">
         <p className="text-muted-foreground">Please select an account to view recommendations</p>
+      </div>
+    );
+  }
+
+  if (isMeta && !selectedMetaAccount) {
+    return (
+      <div className="flex h-[50vh] items-center justify-center">
+        <p className="text-muted-foreground">Please connect a Meta Ads account in Settings to view recommendations</p>
       </div>
     );
   }
@@ -425,7 +667,7 @@ export default function RecommendationsPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">AI Recommendations</h1>
         <p className="text-muted-foreground">
-          Actionable insights to improve your campaign performance
+          Actionable insights to improve your {isMeta ? 'Meta Ads' : 'Google Ads'} performance
         </p>
       </div>
 
@@ -474,18 +716,18 @@ export default function RecommendationsPage() {
 
       {/* Recommendations List */}
       <div className="space-y-4">
-        {isLoadingData && recommendations.length === 0 ? (
+        {isLoadingActive && activeRecommendations.length === 0 ? (
           <Card>
             <CardContent className="pt-6">
               <div className="flex items-center gap-3 text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                <span>Loading your Google Ads data...</span>
+                <span>Loading your {isMeta ? 'Meta Ads' : 'Google Ads'} data...</span>
               </div>
             </CardContent>
           </Card>
         ) : null}
 
-        {!isLoadingData && recommendations.length === 0 ? (
+        {!isLoadingActive && activeRecommendations.length === 0 ? (
           <Card>
             <CardContent className="pt-6">
               <p className="text-muted-foreground">
@@ -495,7 +737,7 @@ export default function RecommendationsPage() {
           </Card>
         ) : null}
 
-        {recommendations.map((rec) => {
+        {activeRecommendations.map((rec) => {
           const CategoryIcon = categoryIcons[rec.category];
           return (
             <Card key={rec.id} className="overflow-hidden">
