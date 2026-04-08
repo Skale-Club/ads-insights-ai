@@ -33,6 +33,7 @@ export function MetaAdsSection() {
   const [loadingAccounts, setLoadingAccounts] = useState(false);
   const [metaAppId, setMetaAppId] = useState<string | null>(null);
   const [configError, setConfigError] = useState<string | null>(null);
+  const [hasCompany, setHasCompany] = useState<boolean | null>(null);
 
   useEffect(() => {
     supabase.functions
@@ -46,7 +47,7 @@ export function MetaAdsSection() {
       });
   }, []);
 
-  // Load connection status
+  // Load connection status + company check
   useEffect(() => {
     if (!user?.id) return;
     supabase
@@ -55,6 +56,13 @@ export function MetaAdsSection() {
       .eq('user_id', user.id)
       .single()
       .then(({ data }) => setConnection(data ?? null));
+
+    supabase
+      .from('companies')
+      .select('id')
+      .eq('user_id', user.id)
+      .maybeSingle()
+      .then(({ data }) => setHasCompany(!!data));
   }, [user?.id]);
 
   // Handle OAuth return (settings?meta_connected=true)
@@ -157,13 +165,18 @@ export function MetaAdsSection() {
                 <XCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
                 <span>{configError}</span>
               </div>
+            ) : !hasCompany ? (
+              <div className="flex items-start gap-2 rounded-md bg-muted p-3 text-sm text-muted-foreground">
+                <XCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                <span>Save your <strong>Company Profile</strong> above before connecting Meta Ads.</span>
+              </div>
             ) : (
               <div className="flex items-start gap-2 rounded-md bg-muted p-3 text-sm text-muted-foreground">
                 <XCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-                <span>Not connected. Save your Company Profile first, then connect Meta Ads.</span>
+                <span>Not connected. Click below to authorize with Facebook.</span>
               </div>
             )}
-            <Button onClick={handleConnect} disabled={!!configError}>Connect Meta Ads</Button>
+            <Button onClick={handleConnect} disabled={!!configError || !hasCompany}>Connect Meta Ads</Button>
           </div>
         ) : (
           <div className="space-y-4">
@@ -180,8 +193,24 @@ export function MetaAdsSection() {
                     · expires {new Date(connection.expires_at).toLocaleDateString()}
                   </span>
                 )}
+                {isExpired && (
+                  <span className="text-destructive ml-1">· Token expired</span>
+                )}
               </span>
             </div>
+
+            {isExpired && (
+              <div className="flex items-start gap-2 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                <XCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                <div className="flex-1">
+                  <p className="font-medium">Session expired</p>
+                  <p className="text-xs mt-0.5">Your Meta access token has expired. Reconnect to restore access.</p>
+                </div>
+                <Button size="sm" variant="destructive" onClick={handleConnect} disabled={!metaAppId}>
+                  Reconnect
+                </Button>
+              </div>
+            )}
 
             {metaAccounts.length > 0 && (
               <div className="space-y-1">

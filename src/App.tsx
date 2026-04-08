@@ -4,12 +4,17 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
-import { DashboardProvider } from "@/contexts/DashboardContext";
+import { DashboardProvider, useDashboard } from "@/contexts/DashboardContext";
 import { OfflineProvider } from "@/contexts/OfflineContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Analytics } from "@vercel/analytics/react";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+
+function DashboardIndex() {
+  const { platform } = useDashboard();
+  return <Navigate to={platform === 'meta' ? 'meta/overview' : 'overview'} replace />;
+}
 
 // Pages
 import LoginPage from "@/pages/Login";
@@ -77,7 +82,7 @@ const App = () => (
                       </ProtectedRoute>
                     }
                   >
-                    <Route index element={<Navigate to="overview" replace />} />
+                    <Route index element={<DashboardIndex />} />
                     <Route path="overview" element={<OverviewPage />} />
                     <Route path="campaigns" element={<CampaignsPage />} />
                     <Route path="ad-groups" element={<AdGroupsPage />} />
