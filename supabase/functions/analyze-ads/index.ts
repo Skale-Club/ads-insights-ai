@@ -1,12 +1,80 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { z } from "npm:zod@3.22.4";
-import { buildSystemPrompt } from "./system-prompt.ts";
+import { buildSystemPrompt, buildMetaSystemPrompt } from "./system-prompt.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
+
+const metaToolDefinitions = [
+  {
+    name: "queryMetaData",
+    description: "Query Meta Ads data for a specific report type and date range. Use this to fetch additional data not in the current context.",
+    parameters: {
+      type: "object",
+      properties: {
+        reportType: { type: "string", enum: ["campaigns", "adsets", "ads", "insights_by_placement", "daily_performance"], description: "Type of Meta report to query" },
+        startDate: { type: "string", description: "Start date in YYYY-MM-DD format" },
+        endDate: { type: "string", description: "End date in YYYY-MM-DD format" },
+      },
+      required: ["reportType", "startDate", "endDate"],
+    },
+  },
+  {
+    name: "pauseCampaign",
+    description: "Pause a running Meta campaign. Use for campaigns wasting budget or underperforming.",
+    parameters: {
+      type: "object",
+      properties: {
+        campaignId: { type: "string", description: "Meta campaign ID to pause" },
+        reason: { type: "string", description: "Reason for pausing" },
+      },
+      required: ["campaignId", "reason"],
+    },
+  },
+  {
+    name: "enableCampaign",
+    description: "Enable a paused Meta campaign.",
+    parameters: {
+      type: "object",
+      properties: {
+        campaignId: { type: "string", description: "Meta campaign ID to enable" },
+        reason: { type: "string", description: "Reason for enabling" },
+      },
+      required: ["campaignId", "reason"],
+    },
+  },
+  {
+    name: "updateBudget",
+    description: "Update the daily budget of a Meta ad set or lifetime budget of a campaign.",
+    parameters: {
+      type: "object",
+      properties: {
+        targetType: { type: "string", enum: ["adset_daily", "campaign_lifetime"], description: "What to update" },
+        targetId: { type: "string", description: "Ad set or campaign ID" },
+        newAmountCents: { type: "number", description: "New budget in cents (e.g. 5000 = $50.00)" },
+        reason: { type: "string", description: "Reason for budget change" },
+      },
+      required: ["targetType", "targetId", "newAmountCents", "reason"],
+    },
+  },
+  {
+    name: "analyzeCreative",
+    description: "Generate creative analysis and ad copy suggestions using angle-based frameworks.",
+    parameters: {
+      type: "object",
+      properties: {
+        currentAdTitle: { type: "string", description: "Current ad headline" },
+        currentAdBody: { type: "string", description: "Current ad body copy" },
+        objective: { type: "string", description: "Campaign objective (conversions, traffic, awareness)" },
+        targetAudience: { type: "string", description: "Description of the target audience" },
+      },
+      required: ["objective"],
+    },
+  },
+];
 
 const toolDefinitions = [
   {
@@ -196,6 +264,9 @@ serve(async (req) => {
       enableTools: z.boolean().optional().default(true),
       providerToken: z.string().optional(),
       customerId: z.string().optional(),
+      platform: z.enum(["google", "meta"]).optional().default("google"),
+      metaAccessToken: z.string().optional(),
+      metaAccountId: z.string().optional(),
     });
 
     const body = await req.json();
@@ -207,9 +278,11 @@ serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
-    const { messages, campaignData, apiKey, model, enableTools, providerToken, customerId } = parseResult.data;
+    const { messages, campaignData, apiKey, model, enableTools, providerToken, customerId, platform, metaAccessToken, metaAccountId } = parseResult.data;
 
-    const systemPrompt = buildSystemPrompt(campaignData);
+    const systemPrompt = platform === "meta"
+      ? buildMetaSystemPrompt(campaignData)
+      : buildSystemPrompt(campaignData);
 
     const geminiModel = String(model || "gemini-2.5-flash").trim();
     const contents = Array.isArray(messages)
@@ -286,11 +359,93 @@ serve(async (req) => {
     };
 
     if (enableTools) {
-      requestBody.tools = [{ functionDeclarations: toolDefinitions }];
+      const tools = platform === "meta" ? metaToolDefinitions : toolDefinitions;
+      requestBody.tools = [{ functionDeclarations: tools }];
     }
 
-    // Agentic loop: resolve queryAdsData tool calls server-side when CLI credentials are present
-    if (enableTools && providerToken && customerId) {
+    // Agentic loop: resolve Meta queryMetaData tool calls
+    if (platform === "meta" && enableTools && metaAccessToken && metaAccountId) {
+      const nonStreamUrl =
+        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModel)}` +
+        `:generateContent?key=${encodeURIComponent(String(apiKey))}`;
+
+      const supabaseUrl = Deno.env.get("SUPABASE_URL");
+
+      const resolveMetaTool = async (
+        url: string,
+        reqBody: Record<string, unknown>,
+      ): Promise<{ contents: unknown[]; finalText: string | null }> => {
+        let contents = [...(reqBody.contents as unknown[])];
+        for (let i = 0; i < 4; i++) {
+          const resp = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ...reqBody, contents }),
+          });
+          if (!resp.ok) break;
+          const data = await resp.json();
+          const parts: any[] = data?.candidates?.[0]?.content?.parts ?? [];
+          const call = parts.find((p: any) => p.functionCall?.name === "queryMetaData");
+          if (!call) {
+            const text = parts.filter((p: any) => p.text).map((p: any) => p.text).join("");
+            return { contents, finalText: text || null };
+          }
+          const args = call.functionCall.args;
+          // Fetch from meta-reports
+          let result: unknown = { error: "SUPABASE_URL not configured" };
+          if (supabaseUrl) {
+            try {
+              const r = await fetch(`${supabaseUrl}/functions/v1/meta-reports`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  accessToken: metaAccessToken,
+                  accountId: metaAccountId,
+                  reportType: args.reportType,
+                  startDate: args.startDate,
+                  endDate: args.endDate,
+                }),
+              });
+              result = r.ok ? await r.json() : { error: `meta-reports error: ${r.status}` };
+            } catch (e) {
+              result = { error: e instanceof Error ? e.message : "fetch failed" };
+            }
+          }
+          contents = [
+            ...contents,
+            { role: "model", parts },
+            { role: "user", parts: [{ functionResponse: { name: "queryMetaData", response: { content: result } } }] },
+          ];
+        }
+        return { contents, finalText: null };
+      };
+
+      const { contents: resolvedContents, finalText } = await resolveMetaTool(nonStreamUrl, requestBody);
+
+      if (finalText !== null) {
+        const encoder = new TextEncoder();
+        const words = finalText.split(/(?<=\s)/);
+        const stream = new ReadableStream({
+          start(controller) {
+            for (const chunk of words) {
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: chunk } }] })}\n\n`),
+              );
+            }
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            controller.close();
+          },
+        });
+        return new Response(stream, {
+          headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
+        });
+      }
+
+      requestBody.contents = resolvedContents;
+    }
+
+    // Agentic loop: resolve Google queryAdsData tool calls server-side when CLI credentials are present
+    if (platform !== "meta" && enableTools && providerToken && customerId) {
       const nonStreamUrl =
         `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModel)}` +
         `:generateContent?key=${encodeURIComponent(String(apiKey))}`;

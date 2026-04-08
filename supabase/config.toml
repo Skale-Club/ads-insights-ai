@@ -41,3 +41,18 @@ verify_jwt = false
 
 [functions.get-cli-session]
 verify_jwt = false
+
+[functions.meta-auth]
+verify_jwt = false
+
+[functions.meta-accounts]
+verify_jwt = false
+
+[functions.meta-reports]
+verify_jwt = false
+
+[functions.meta-mutate]
+verify_jwt = false
+
+[functions.get-meta-cli-session]
+verify_jwt = false

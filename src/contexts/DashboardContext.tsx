@@ -12,11 +12,15 @@ const STORAGE_SELECTED_ACCOUNT_ID = 'adsinsight:selectedAccountId';
 const STORAGE_HIDDEN_ACCOUNT_IDS = 'adsinsight:hiddenAccountIds';
 const STORAGE_TIMEZONE = 'adsinsight:timezone';
 const STORAGE_ATTRIBUTION_WINDOW = 'adsinsight:attributionWindow';
+const STORAGE_PLATFORM = 'adsinsight:platform';
+const STORAGE_META_ACCOUNT_ID = 'adsinsight:metaSelectedAccountId';
 
 interface DateRange {
   from: Date;
   to: Date;
 }
+
+export type AdPlatform = 'google' | 'meta';
 
 export interface AdsAccount {
   id: string;
@@ -28,7 +32,19 @@ export interface AdsAccount {
   status?: string;
 }
 
+export interface MetaAdAccount {
+  account_id: string;  // act_XXXXXXXXX
+  account_name: string;
+  currency: string;
+  account_status: number;
+  is_selected: boolean;
+}
+
 interface DashboardContextType {
+  // Platform
+  platform: AdPlatform;
+  setPlatform: (p: AdPlatform) => void;
+  // Google Ads
   selectedAccount: AdsAccount | null;
   setSelectedAccount: (account: AdsAccount | null) => void;
   accounts: AdsAccount[];
@@ -37,6 +53,12 @@ interface DashboardContextType {
   hiddenAccountIds: string[];
   toggleAccountHidden: (accountId: string) => void;
   unhideAllAccounts: () => void;
+  // Meta Ads
+  metaAccounts: MetaAdAccount[];
+  setMetaAccounts: (accounts: MetaAdAccount[]) => void;
+  selectedMetaAccount: MetaAdAccount | null;
+  setSelectedMetaAccount: (account: MetaAdAccount | null) => void;
+  // Shared
   dateRange: DateRange;
   setDateRange: (range: DateRange) => void;
   dateRangePreset: DateRangePreset;
@@ -129,6 +151,26 @@ function getPreviousPeriodRange(range: DateRange): DateRange {
 export function DashboardProvider({ children }: { children: React.ReactNode }) {
   const { session, providerToken } = useAuth();
   const { toast } = useToast();
+
+  // Platform
+  const [platform, setPlatformState] = useState<AdPlatform>(() =>
+    (safeGetLocalStorage(STORAGE_PLATFORM) as AdPlatform) || 'google'
+  );
+  const setPlatform = (p: AdPlatform) => {
+    setPlatformState(p);
+    safeSetLocalStorage(STORAGE_PLATFORM, p);
+  };
+
+  // Meta Ads
+  const [metaAccounts, setMetaAccounts] = useState<MetaAdAccount[]>([]);
+  const [selectedMetaAccount, setSelectedMetaAccountState] = useState<MetaAdAccount | null>(null);
+
+  const setSelectedMetaAccount = (account: MetaAdAccount | null) => {
+    setSelectedMetaAccountState(account);
+    safeSetLocalStorage(STORAGE_META_ACCOUNT_ID, account?.account_id ?? null);
+  };
+
+  // Google Ads
   const [selectedAccount, setSelectedAccount] = useState<AdsAccount | null>(null);
   const [accounts, setAccounts] = useState<AdsAccount[]>([]);
   const [preferredAccountId, setPreferredAccountId] = useState<string | null>(() =>
@@ -179,6 +221,30 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     setHiddenAccountIds([]);
     safeSetLocalStorageJson(STORAGE_HIDDEN_ACCOUNT_IDS, []);
   };
+
+  // Load Meta accounts from Supabase on mount
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    supabase
+      .from('meta_accounts')
+      .select('*')
+      .eq('user_id', session.user.id)
+      .then(({ data }) => {
+        if (!data || data.length === 0) return;
+        const mapped: MetaAdAccount[] = data.map((r: any) => ({
+          account_id: r.account_id,
+          account_name: r.account_name,
+          currency: r.currency,
+          account_status: r.account_status,
+          is_selected: r.is_selected,
+        }));
+        setMetaAccounts(mapped);
+        const preferred = safeGetLocalStorage(STORAGE_META_ACCOUNT_ID);
+        const match = preferred ? mapped.find((a) => a.account_id === preferred) : null;
+        const selected = match || mapped.find((a) => a.is_selected) || mapped[0] || null;
+        setSelectedMetaAccountState(selected);
+      });
+  }, [session?.user?.id]);
 
   // Auto-fetch accounts when session is available
   useEffect(() => {
@@ -253,6 +319,8 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   return (
     <DashboardContext.Provider
       value={{
+        platform,
+        setPlatform,
         selectedAccount,
         setSelectedAccount: setSelectedAccountAndPersist,
         accounts,
@@ -261,6 +329,10 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
         hiddenAccountIds,
         toggleAccountHidden,
         unhideAllAccounts,
+        metaAccounts,
+        setMetaAccounts,
+        selectedMetaAccount,
+        setSelectedMetaAccount,
         dateRange,
         setDateRange,
         dateRangePreset,

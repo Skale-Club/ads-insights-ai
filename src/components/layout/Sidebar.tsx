@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/tooltip';
 import { AdsLogo } from '@/components/icons/AdsLogo';
 import { APP_CONFIG } from '@/config/app';
-import { navItems } from '@/config/navigation';
+import { navItems, metaNavItems } from '@/config/navigation';
 
 interface SidebarProps {
   collapsed: boolean;
@@ -22,7 +22,7 @@ interface SidebarProps {
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const location = useLocation();
   const { signOut } = useAuth();
-  const { lastRefreshed } = useDashboard();
+  const { lastRefreshed, platform } = useDashboard();
 
   return (
     <aside
@@ -32,7 +32,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       )}
     >
       <SidebarHeader collapsed={collapsed} onToggle={onToggle} />
-      <SidebarNav collapsed={collapsed} location={location} />
+      <SidebarNav collapsed={collapsed} location={location} platform={platform} />
       <SidebarToggle collapsed={collapsed} onToggle={onToggle} />
       <SidebarFooter collapsed={collapsed} signOut={signOut} lastRefreshed={lastRefreshed} />
     </aside>
@@ -79,12 +79,14 @@ function SidebarHeader({ collapsed, onToggle }: SidebarHeaderProps) {
 interface SidebarNavProps {
   collapsed: boolean;
   location: ReturnType<typeof useLocation>;
+  platform: 'google' | 'meta';
 }
 
-function SidebarNav({ collapsed, location }: SidebarNavProps) {
+function SidebarNav({ collapsed, location, platform }: SidebarNavProps) {
+  const items = platform === 'meta' ? metaNavItems : navItems;
   return (
     <nav className="flex-1 space-y-1 p-2">
-      {navItems.map((item) => {
+      {items.map((item) => {
         const isActive = location.pathname === item.path;
         const NavIcon = item.icon;
 

@@ -6,6 +6,9 @@ import { AISettingsCard } from '@/components/settings/AISettingsCard';
 import { AlertSettingsCard } from '@/components/settings/AlertSettings';
 import { DataSettingsCard } from '@/components/settings/DataSettingsCard';
 import { ClaudeCodeSection } from '@/components/settings/ClaudeCodeSection';
+import { CompanySection } from '@/components/settings/CompanySection';
+import { MetaAdsSection } from '@/components/settings/MetaAdsSection';
+import { MetaClaudeCodeSection } from '@/components/settings/MetaClaudeCodeSection';
 
 export default function SettingsPage() {
   return (
@@ -19,10 +22,20 @@ export default function SettingsPage() {
 
       <ProfileSection />
       <AccountSection />
+
+      <div>
+        <h2 className="text-lg font-semibold mb-4">Ad Platforms</h2>
+        <div className="space-y-4">
+          <CompanySection />
+          <MetaAdsSection />
+        </div>
+      </div>
+
       <AISettingsCard />
       <AlertSettingsCard />
       <DataSettingsCard />
       <ClaudeCodeSection />
+      <MetaClaudeCodeSection />
       <EnvironmentSection />
       <PrivacySection />
     </div>

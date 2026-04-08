@@ -46,5 +46,6 @@ supabase/.temp
 # Tools (Supabase CLI and other binaries)
 tools/
 
-# Claude Code CLI session (contains sensitive Google OAuth token)
+# Claude Code CLI sessions (contain sensitive OAuth tokens)
 .ads-cli-session.json
+.ads-meta-cli-session.json

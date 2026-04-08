@@ -1,6 +1,11 @@
 {
   "version": 1,
   "skills": {
+    "ad-creative": {
+      "source": "coreyhaines31/marketingskills",
+      "sourceType": "github",
+      "computedHash": "660ef74aba893d23335366c5bcc11faf7701ce9f441d9450bc80ab53dccbf21e"
+    },
     "google-ads-manager": {
       "source": "claude-office-skills/skills",
       "sourceType": "github",
