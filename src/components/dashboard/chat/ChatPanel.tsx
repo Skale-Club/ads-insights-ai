@@ -16,13 +16,15 @@ import { DataStreamPreview } from './DataStreamPreview';
 import { MessageList } from './MessageList';
 import { ChatInput } from './ChatInput';
 import { normalizeModel } from './types';
+import { supabase } from '@/integrations/supabase/client';
 import type { ChatAttachment } from '@/components/dashboard/ChatAttachments';
 import type { ToolApprovalRequest } from '@/types/chat';
 
 export function ChatPanel({ campaignContext }: { campaignContext?: unknown }) {
   const { user, providerToken } = useAuth();
-  const { selectedAccount, setChatWidth } = useDashboard();
+  const { selectedAccount, selectedMetaAccount, platform, setChatWidth } = useDashboard();
   const { toast } = useToast();
+  const [metaAccessToken, setMetaAccessToken] = useState<string | null>(null);
   const { addDataPart, clearDataStream } = useDataStream();
 
   const [open, setOpen] = useState(false);
@@ -78,6 +80,17 @@ export function ChatPanel({ campaignContext }: { campaignContext?: unknown }) {
     }
   }, [aiSettings?.model]);
 
+  // Load Meta access token when platform switches to meta
+  useEffect(() => {
+    if (platform !== 'meta' || !user?.id) { setMetaAccessToken(null); return; }
+    supabase
+      .from('meta_connections')
+      .select('access_token')
+      .eq('user_id', user.id)
+      .single()
+      .then(({ data }) => setMetaAccessToken(data?.access_token ?? null));
+  }, [platform, user?.id]);
+
   const effectiveContext = useChatContext(campaignContext, open);
 
   const { isStreaming, sendMessage, approveTool, denyTool, stop } = useChatStream({
@@ -92,6 +105,9 @@ export function ChatPanel({ campaignContext }: { campaignContext?: unknown }) {
     model: selectedModel,
     effectiveContext,
     providerToken,
+    platform,
+    metaAccessToken,
+    metaAccountId: selectedMetaAccount?.account_id ?? null,
     addDataPart,
     onApprovalRequest: setPendingToolApproval,
     toast,

@@ -9,6 +9,7 @@ import type { DataPart } from '@/contexts/DataStreamContext';
 import { useChatV2 } from '@/hooks/use-chat-v2';
 
 const TOOL_RISK_LEVEL: Record<string, 'low' | 'medium' | 'high'> = {
+  // Google
   queryAdsData: 'low',
   addNegativeKeyword: 'low',
   adjustBid: 'medium',
@@ -16,9 +17,14 @@ const TOOL_RISK_LEVEL: Record<string, 'low' | 'medium' | 'high'> = {
   updateCampaignBudget: 'medium',
   enableCampaign: 'medium',
   pauseCampaign: 'high',
+  // Meta
+  queryMetaData: 'low',
+  analyzeCreative: 'low',
+  updateBudget: 'medium',
 };
 
 const TOOL_DESCRIPTION: Record<string, string> = {
+  // Google
   addNegativeKeyword: 'Add a negative keyword to prevent wasteful searches.',
   adjustBid: 'Adjust bid strategy or keyword investment.',
   pauseCampaign: 'Pause a campaign that is underperforming.',
@@ -26,6 +32,10 @@ const TOOL_DESCRIPTION: Record<string, string> = {
   createBudget: 'Create a new shared budget.',
   updateCampaignBudget: 'Change the budget for a campaign.',
   queryAdsData: 'Retrieve additional Google Ads data.',
+  // Meta
+  queryMetaData: 'Retrieve additional Meta Ads data.',
+  analyzeCreative: 'Analyse creative performance and suggest improvements.',
+  updateBudget: 'Update the budget for a Meta ad set or campaign.',
 };
 
 interface UseChatStreamOptions {
@@ -40,6 +50,9 @@ interface UseChatStreamOptions {
   model: string;
   effectiveContext: unknown;
   providerToken: string | null;
+  platform?: 'google' | 'meta';
+  metaAccessToken?: string | null;
+  metaAccountId?: string | null;
   addDataPart: (part: Omit<DataPart, 'id' | 'createdAt'>) => void;
   onApprovalRequest: (request: ToolApprovalRequest | null) => void;
   toast: (input: { title: string; description: string; variant?: 'default' | 'destructive'; duration?: number }) => void;
@@ -57,6 +70,9 @@ export function useChatStream({
   model,
   effectiveContext,
   providerToken,
+  platform = 'google',
+  metaAccessToken,
+  metaAccountId,
   addDataPart,
   onApprovalRequest,
   toast,
@@ -130,6 +146,13 @@ export function useChatStream({
           apiKey,
           model,
           enableTools: true,
+          platform,
+          ...(platform === 'meta' && metaAccessToken && metaAccountId
+            ? { metaAccessToken, metaAccountId }
+            : {}),
+          ...(platform === 'google' && providerToken && selectedAccountId
+            ? { providerToken, customerId: selectedAccountId }
+            : {}),
         }),
       });
 
@@ -153,7 +176,7 @@ export function useChatStream({
 
       return response.body;
     },
-    [apiKey, effectiveContext, model],
+    [apiKey, effectiveContext, model, platform, providerToken, selectedAccountId, metaAccessToken, metaAccountId],
   );
 
   const updateAssistantMessage = useCallback(
@@ -334,24 +357,65 @@ export function useChatStream({
 
   const approveTool = useCallback(async () => {
     const pending = pendingToolCallRef.current;
-    if (!pending || !selectedAccountId || !providerToken) return;
+    const isMeta = platform === 'meta';
+
+    if (!pending) return;
+    if (isMeta && (!metaAccessToken || !metaAccountId)) return;
+    if (!isMeta && (!selectedAccountId || !providerToken)) return;
 
     onApprovalRequest(null);
     addDataPart({ type: 'status', label: `Executing ${pending.part.toolName}`, level: 'info' });
 
-    const response = await fetch(`${SUPABASE_URL}/functions/v1/google-ads-execute`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
-      },
-      body: JSON.stringify({
-        providerToken,
-        customerId: selectedAccountId,
-        toolName: pending.part.toolName,
-        input: pending.part.input,
-      }),
-    });
+    let response: Response;
+
+    if (isMeta) {
+      // Map Gemini tool names to meta-mutate actions
+      const toolName = pending.part.toolName;
+      const input = pending.part.input as Record<string, any>;
+      let action: string;
+      let body: Record<string, any> = { accessToken: metaAccessToken };
+
+      if (toolName === 'pauseCampaign') {
+        action = 'pauseCampaign';
+        body.campaignId = input.campaignId;
+      } else if (toolName === 'enableCampaign') {
+        action = 'enableCampaign';
+        body.campaignId = input.campaignId;
+      } else if (toolName === 'updateBudget') {
+        action = input.budgetType === 'lifetime' ? 'updateLifetimeBudget' : 'updateDailyBudget';
+        body.adSetId = input.adSetId;
+        body.campaignId = input.campaignId;
+        body.amountCents = input.amountCents;
+      } else {
+        // analyzeCreative and other read-only tools — no mutation needed
+        addDataPart({ type: 'status', label: `${toolName}: read-only, no action needed`, level: 'info' });
+        pendingToolCallRef.current = null;
+        return;
+      }
+
+      response = await fetch(`${SUPABASE_URL}/functions/v1/meta-mutate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({ ...body, action }),
+      });
+    } else {
+      response = await fetch(`${SUPABASE_URL}/functions/v1/google-ads-execute`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({
+          providerToken,
+          customerId: selectedAccountId,
+          toolName: pending.part.toolName,
+          input: pending.part.input,
+        }),
+      });
+    }
 
     const result = await response.json();
     const success = Boolean(result?.success);
@@ -384,7 +448,7 @@ export function useChatStream({
         text: `Tool ${pending.part.toolName} executed successfully with result: ${JSON.stringify(result.data || result)}. Summarize what changed and recommend next steps.`,
       });
     }
-  }, [addDataPart, onApprovalRequest, providerToken, selectedAccountId, sendMessage, updateAssistantMessage]);
+  }, [addDataPart, onApprovalRequest, platform, providerToken, selectedAccountId, metaAccessToken, metaAccountId, sendMessage, updateAssistantMessage]);
 
   const denyTool = useCallback((reason?: string) => {
     const pending = pendingToolCallRef.current;
