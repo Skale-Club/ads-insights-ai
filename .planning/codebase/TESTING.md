@@ -1,115 +1,243 @@
 # Testing Patterns
 
-**Analysis Date:** 2026-03-31
+**Analysis Date:** 2026-05-06
 
 ## Test Framework
 
-### Runner
+**Runner:**
+- Vitest 3.2.4 from `package.json`.
+- Config: `vitest.config.ts`.
+- Environment: `jsdom`.
+- Globals: enabled in `vitest.config.ts`, so `describe`, `it`, `expect`, `beforeEach`, `afterEach`, and `vi` are available without imports. Existing tests still import them explicitly in `src/test/*.test.*`.
+- Include pattern: `src/**/*.{test,spec}.{ts,tsx}` in `vitest.config.ts`.
 
-- **Framework:** Vitest 3.2.4
-- **Config file:** `vitest.config.ts`
-- **Environment:** jsdom (browser-like environment for React testing)
-- **Globals:** Enabled (no need to import describe/it/expect)
+**Assertion Library:**
+- Vitest built-in `expect`.
+- `@testing-library/jest-dom` is loaded by `src/test/setup.ts` for DOM matchers such as `toBeInTheDocument`.
 
-### Assertion Library
+**React Testing:**
+- `@testing-library/react` is installed and used for `render`, `renderHook`, `screen`, `waitFor`, and `act`.
+- `@testing-library/user-event` is not installed in `package.json`; use installed Testing Library helpers or add the dependency before adopting `userEvent`.
 
-- **Library:** Vitest built-in `expect`
-- **Extended matchers:** `@testing-library/jest-dom` (provides `toBeInTheDocument`, `toHaveTextContent`, etc.)
-
-### Testing Library
-
-- **Component testing:** `@testing-library/react` 16.0.0
-- **DOM assertions:** `@testing-library/jest-dom` 6.6.0
-
-### Run Commands
-
+**Run Commands:**
 ```bash
-npm run test              # Run all tests once (Vitest run mode)
-npm run test:watch        # Run tests in watch mode
-npx vitest run src/path/to/file.test.ts  # Run single test file
+npm run test
+npm run test:watch
+npx vitest run src/test/AuthContext.test.tsx
+npx vitest run src/test/useGoogleAdsReport.test.tsx
 ```
 
 ## Test File Organization
 
-### Location
+**Location:**
+- Current tests live in the dedicated `src/test/` directory.
+- Test setup lives in `src/test/setup.ts`.
+- Source files under test are imported by alias, such as `@/contexts/AuthContext` and `@/hooks/useGoogleAdsReport`.
 
-- **Pattern:** Co-located with source files OR in dedicated `src/test/` directory
-- **Current approach:** Single `src/test/` directory with `example.test.ts`
-- **Naming:** `*.test.ts` or `*.spec.ts` suffix
+**Naming:**
+- Use `*.test.ts` for pure TypeScript tests: `src/test/example.test.ts`.
+- Use `*.test.tsx` for React component/context/hook tests: `src/test/AuthContext.test.tsx`, `src/test/ErrorBoundary.test.tsx`, `src/test/useGoogleAdsReport.test.tsx`.
 
-### Directory Structure
-
-```
-src/
-├── test/
-│   ├── setup.ts          # Test setup and global mocks
-│   └── example.test.ts   # Example test file
-├── components/
-│   ├── dashboard/
-│   │   ├── KpiCard.tsx
-│   │   └── KpiCard.test.tsx   # Co-located test (if exists)
-│   └── ui/
-│       └── button.tsx
-├── hooks/
-│   ├── useGoogleAdsReport.ts
-│   └── useGoogleAdsReport.test.ts  # Co-located test (if exists)
-└── contexts/
-    ├── AuthContext.tsx
-    └── AuthContext.test.tsx  # Co-located test (if exists)
+**Structure:**
+```text
+src/test/
+├── setup.ts
+├── example.test.ts
+├── AuthContext.test.tsx
+├── ErrorBoundary.test.tsx
+└── useGoogleAdsReport.test.tsx
 ```
 
 ## Test Structure
 
-### Example Test (from `src/test/example.test.ts`)
-
+**Suite Organization:**
 ```typescript
-import { describe, it, expect } from "vitest";
+import { render, screen, waitFor, act } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 
-describe("example", () => {
-  it("should pass", () => {
-    expect(true).toBe(true);
-  });
-});
-```
-
-### Recommended Structure
-
-```typescript
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { MyComponent } from "./MyComponent";
-
-describe("MyComponent", () => {
+describe('AuthContext', () => {
   beforeEach(() => {
-    // Setup before each test
+    vi.clearAllMocks();
+    sessionStorage.clear();
   });
 
-  afterEach(() => {
-    // Cleanup after each test
-  });
+  it('sets loading=false and user=null when no session exists', async () => {
+    renderWithAuth();
 
-  it("should render correctly", () => {
-    render(<MyComponent />);
-    expect(screen.getByText("Hello")).toBeInTheDocument();
-  });
-
-  it("should handle user interaction", async () => {
-    const user = userEvent.setup();
-    render(<MyComponent />);
-    
-    await user.click(screen.getByRole("button"));
-    
     await waitFor(() => {
-      expect(screen.getByText("Clicked")).toBeInTheDocument();
+      expect(screen.getByTestId('loading').textContent).toBe('false');
     });
   });
 });
 ```
 
+**Patterns:**
+- Put module mocks before importing the mocked module instance. Example: `vi.mock('@/integrations/supabase/client', ...)` precedes `import { supabase } ...` in `src/test/AuthContext.test.tsx` and `src/test/useGoogleAdsReport.test.tsx`.
+- Use small in-test consumer components for context tests. Example: `TestConsumer` in `src/test/AuthContext.test.tsx`.
+- Use wrapper factories for provider-heavy hook tests. Example: `makeWrapper()` creates a `QueryClientProvider` in `src/test/useGoogleAdsReport.test.tsx`.
+- Use `waitFor` for asynchronous state transitions from effects or React Query. Examples: all async tests in `src/test/AuthContext.test.tsx` and `src/test/useGoogleAdsReport.test.tsx`.
+- Use `act` around manually invoked React callbacks. Example: captured Supabase auth callback in `src/test/AuthContext.test.tsx`.
+
+## Mocking
+
+**Framework:** Vitest `vi`.
+
+**Patterns:**
+```typescript
+vi.mock('@/integrations/supabase/client', () => ({
+  isSupabaseConfigured: true,
+  supabase: {
+    auth: {
+      getSession: vi.fn(),
+      onAuthStateChange: vi.fn(),
+      signInWithOAuth: vi.fn(),
+      signOut: vi.fn(),
+    },
+    functions: {
+      invoke: vi.fn(),
+    },
+  },
+}));
+```
+
+```typescript
+vi.mock('@/contexts/DashboardContext', () => ({
+  useDashboard: () => ({
+    selectedAccount: { id: 'cust-123' },
+    dateRange: { from: new Date('2024-01-01'), to: new Date('2024-01-31') },
+    previousPeriodRange: { from: new Date('2023-12-01'), to: new Date('2023-12-31') },
+  }),
+}));
+```
+
+**What to Mock:**
+- Supabase clients and functions from `src/integrations/supabase/client.ts`.
+- Context hooks when testing a hook that depends on them, such as `useDashboard` and `useAuth` in `src/test/useGoogleAdsReport.test.tsx`.
+- Toast hooks for user feedback side effects, such as `@/hooks/use-toast` in `src/test/useGoogleAdsReport.test.tsx`.
+- Browser storage state with `localStorage.clear()` and `sessionStorage.clear()` in `beforeEach`.
+- Console errors when a test intentionally triggers React error output, as in `src/test/ErrorBoundary.test.tsx`.
+
+**What NOT to Mock:**
+- The unit under test. `src/test/AuthContext.test.tsx` renders the real `AuthProvider`; `src/test/ErrorBoundary.test.tsx` renders the real `ErrorBoundary`; `src/test/useGoogleAdsReport.test.tsx` calls the real `useGoogleAdsReport`.
+- React Query itself for hooks that validate query behavior. Use a real `QueryClientProvider` with retries disabled instead.
+- shadcn/ui primitives for ordinary rendering tests; they are regular React components under `src/components/ui/`.
+
+## Fixtures and Factories
+
+**Test Data:**
+```typescript
+const mockData = [{ id: '1', name: 'Campaign A', impressions: 1000 }];
+
+(supabase.functions.invoke as ReturnType<typeof vi.fn>).mockResolvedValue({
+  data: { data: mockData },
+  error: null,
+});
+```
+
+**Location:**
+- Fixtures are currently inline inside individual test files.
+- Shared fixture files are not present. If multiple tests need the same Supabase session, Google Ads account, Meta account, or report payload, add a focused helper under `src/test/`, for example `src/test/fixtures.ts`.
+
+**Factory Pattern:**
+```typescript
+function makeWrapper() {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  );
+}
+```
+
+Use the `makeWrapper()` pattern for hooks that depend on React Query, and create a fresh `QueryClient` per test or per render group so cache state stays isolated.
+
+## Coverage
+
+**Requirements:** No coverage threshold is configured in `vitest.config.ts`.
+
+**View Coverage:**
+```bash
+npx vitest run --coverage
+```
+
+Coverage requires adding a Vitest coverage provider such as `@vitest/coverage-v8`; no coverage provider is listed in `package.json`.
+
+## Test Types
+
+**Unit Tests:**
+- `src/test/example.test.ts` is a smoke/unit example.
+- Utility tests are not currently present for `src/lib/errors.ts`, `src/lib/googleAdsUi.ts`, or `src/components/dashboard/chat/types.ts`; add straightforward unit tests when changing those helpers.
+
+**Component Tests:**
+- `src/test/ErrorBoundary.test.tsx` renders `src/components/ErrorBoundary.tsx` under `BrowserRouter`, verifies children render normally, and verifies fallback UI after a child throws.
+- Component tests should assert user-visible text/roles where available and suppress expected console noise only inside the test that triggers it.
+
+**Context Tests:**
+- `src/test/AuthContext.test.tsx` renders `AuthProvider` with a test consumer and mocked Supabase auth methods.
+- Auth tests cover loading state, null session, provider token capture, sessionStorage restore, sign-out cleanup, and guard-hook failure outside the provider.
+
+**Hook Tests:**
+- `src/test/useGoogleAdsReport.test.tsx` uses `renderHook`, a real `QueryClientProvider`, and mocked Supabase/context/toast dependencies.
+- Hook tests cover success payloads, edge-function error payloads, invocation failures, React Query cache reuse, and disabled queries.
+
+**Integration Tests:**
+- No full route/page integration tests are present for `src/App.tsx`, `src/components/layout/DashboardLayout.tsx`, dashboard pages under `src/pages/dashboard/`, or settings flows under `src/pages/settings/`.
+
+**E2E Tests:**
+- Not used. No Playwright, Cypress, or browser E2E config is present in `package.json` or project config files.
+
+## Common Patterns
+
+**Async Testing:**
+```typescript
+const { result } = renderHook(() => useGoogleAdsReport('campaigns'), {
+  wrapper: makeWrapper(),
+});
+
+await waitFor(() => expect(result.current.isSuccess).toBe(true));
+expect(result.current.data).toEqual(mockData);
+```
+
+Use `waitFor` for effects, Supabase auth session initialization, and React Query status changes.
+
+**Error Testing:**
+```typescript
+(supabase.functions.invoke as ReturnType<typeof vi.fn>).mockResolvedValue({
+  data: { error: 'Google Ads API Error (400): bad request' },
+  error: null,
+});
+
+const { result } = renderHook(() => useGoogleAdsReport('campaigns'), {
+  wrapper: makeWrapper(),
+});
+
+await waitFor(() => expect(result.current.isError).toBe(true));
+expect((result.current.error as Error).message).toContain('Google Ads API Error (400)');
+```
+
+**Context Guard Testing:**
+```typescript
+const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+expect(() => render(<TestConsumer />)).toThrow('useAuth must be used within an AuthProvider');
+spy.mockRestore();
+```
+
+**Storage Testing:**
+```typescript
+beforeEach(() => {
+  vi.clearAllMocks();
+  sessionStorage.clear();
+  localStorage.clear();
+});
+```
+
+Use `sessionStorage` expectations for Google OAuth provider-token behavior in `src/contexts/AuthContext.tsx`; use `localStorage` expectations for report cache behavior in `src/hooks/useGoogleAdsReport.ts` and `src/hooks/useMetaReport.ts`.
+
 ## Test Setup
 
-### Setup File (`src/test/setup.ts`)
+**Global Setup:** `src/test/setup.ts`
 
 ```typescript
 import "@testing-library/jest-dom";
@@ -129,13 +257,9 @@ Object.defineProperty(window, "matchMedia", {
 });
 ```
 
-### Vitest Config (`vitest.config.ts`)
+**Config:** `vitest.config.ts`
 
 ```typescript
-import { defineConfig } from "vitest/config";
-import react from "@vitejs/plugin-react-swc";
-import path from "path";
-
 export default defineConfig({
   plugins: [react()],
   test: {
@@ -150,327 +274,46 @@ export default defineConfig({
 });
 ```
 
-### What the Setup Provides
+**Setup Responsibilities:**
+- Load jest-dom matchers.
+- Provide a `window.matchMedia` mock for responsive hooks and UI.
+- Reuse the same `@/` alias as app code.
 
-- **Jest-dom matchers:** `toBeInTheDocument()`, `toHaveTextContent()`, `toBeVisible()`, etc.
-- **matchMedia mock:** Required for components using media queries (e.g., responsive UI)
-- **Globals:** `describe`, `it`, `expect`, `beforeEach`, `afterEach`, `vi` available without import
-- **Path alias:** `@/*` resolves to `./src/` in tests
+## Verification Snapshot
 
-## Mocking
-
-### Framework
-
-- **Mocking:** Vitest's `vi` object for creating mocks and spies
-- **Module mocking:** `vi.mock()` for module-level mocks
-
-### Common Mocks
-
-```typescript
-// Mock a module
-vi.mock("@/integrations/supabase/client", () => ({
-  supabase: {
-    auth: {
-      getSession: vi.fn(),
-      onAuthStateChange: vi.fn(),
-    },
-    functions: {
-      invoke: vi.fn(),
-    },
-  },
-}));
-
-// Mock a hook
-vi.mock("@/hooks/useGoogleAdsReport", () => ({
-  useGoogleAdsReport: vi.fn(() => ({
-    data: mockData,
-    isLoading: false,
-    error: null,
-  })),
-}));
-
-// Mock context
-vi.mock("@/contexts/AuthContext", () => ({
-  useAuth: vi.fn(() => ({
-    user: { id: "123", email: "test@example.com" },
-    session: { access_token: "mock-token" },
-    providerToken: "mock-provider-token",
-    loading: false,
-    signInWithGoogle: vi.fn(),
-    signOut: vi.fn(),
-  })),
-}));
-```
-
-### Mocking External Dependencies
-
-```typescript
-// Mock React Query
-vi.mock("@tanstack/react-query", () => ({
-  useQuery: vi.fn(() => ({
-    data: mockData,
-    isLoading: false,
-    error: null,
-  })),
-}));
-
-// Mock router
-vi.mock("react-router-dom", () => ({
-  useNavigate: () => vi.fn(),
-  useParams: () => ({}),
-}));
-```
-
-### What to Mock
-
-- **External services:** Supabase client, Google Ads API calls
-- **Hooks with side effects:** `useGoogleAdsReport`, `useAuth` (in component tests)
-- **Browser APIs:** `matchMedia`, `localStorage`, `sessionStorage`
-- **Third-party libraries:** Analytics, OAuth flows
-
-### What NOT to Mock
-
-- **Component internals:** Test behavior, not implementation
-- **Simple utilities:** `cn()` from utils can be tested directly
-- **UI primitives:** shadcn/ui components can be rendered
-
-## Fixtures and Factories
-
-### Test Data Location
-
-- **Inline:** Define directly in test file for simple data
-- **Fixtures file:** Create `src/test/fixtures.ts` for shared data
-
-### Example Fixture Pattern
-
-```typescript
-// src/test/fixtures.ts
-export const mockUser = {
-  id: "user-123",
-  email: "test@example.com",
-  app_metadata: {},
-  user_metadata: { full_name: "Test User" },
-  aud: "authenticated",
-  created_at: "2024-01-01T00:00:00Z",
-};
-
-export const mockSession = {
-  access_token: "mock-access-token",
-  refresh_token: "mock-refresh-token",
-  expires_in: 3600,
-  expires_at: Math.floor(Date.now() / 1000) + 3600,
-  token_type: "bearer",
-  user: mockUser,
-};
-
-export const mockAdsAccount = {
-  id: "acc-123",
-  customerId: "123-456-7890",
-  name: "Test Account",
-  currencyCode: "USD",
-  timeZone: "America/New_York",
-};
-```
-
-### Factory Functions
-
-```typescript
-function createMockCampaign(overrides = {}) {
-  return {
-    id: "camp-1",
-    name: "Test Campaign",
-    status: "ENABLED",
-    budget: 1000,
-    impressions: 10000,
-    clicks: 500,
-    ...overrides,
-  };
-}
-```
-
-## Coverage
-
-### Requirements
-
-- **Target:** No explicit coverage threshold enforced
-- **Current state:** No coverage configuration in `vitest.config.ts`
-
-### View Coverage
-
+**Current Command Result:**
 ```bash
-npx vitest run --coverage
-# Note: Requires @vitest/coverage-v8 or similar package
+npm run test
 ```
 
-### Recommended Coverage Configuration
+Current result: 4 test files passed, 14 tests passed.
 
-Add to `vitest.config.ts`:
-```typescript
-export default defineConfig({
-  test: {
-    coverage: {
-      provider: "v8",
-      reporter: ["text", "json", "html"],
-      thresholds: {
-        lines: 80,
-        functions: 80,
-        branches: 80,
-        statements: 80,
-      },
-    },
-  },
-});
-```
+**Observed Test Output:**
+- `src/test/AuthContext.test.tsx` emits `[Auth]` console logs from `src/contexts/AuthContext.tsx`.
+- `src/test/ErrorBoundary.test.tsx` emits React Router v7 future-flag warnings from `react-router-dom`.
+- These logs/warnings do not fail the current test suite.
 
-## Test Types
+## Add-Test Guidance
 
-### Unit Tests
+**Auth and OAuth Changes:**
+- Update `src/test/AuthContext.test.tsx` when changing `src/contexts/AuthContext.tsx`.
+- Cover provider token capture, `sessionStorage` fallback, Supabase `onAuthStateChange`, and sign-out cleanup.
 
-- **Scope:** Individual hooks, utilities, small components
-- **Approach:** Test in isolation with mocks
-- **Location:** Co-located or in `src/test/`
+**Report Hook Changes:**
+- Update `src/test/useGoogleAdsReport.test.tsx` when changing `src/hooks/useGoogleAdsReport.ts`.
+- Add a matching test file for `src/hooks/useMetaReport.ts` before changing Meta reporting behavior; use the same React Query wrapper pattern.
 
-### Integration Tests
+**Error Boundary Changes:**
+- Update `src/test/ErrorBoundary.test.tsx` when changing `src/components/ErrorBoundary.tsx`.
+- Keep a router wrapper when testing actions or links that assume `react-router-dom` context.
 
-- **Scope:** Context providers, composite components
-- **Approach:** Render with necessary providers, mock external services
-- **Example:** Test `AuthContext` behavior with mocked Supabase
+**Forms and Settings Changes:**
+- Add tests for React Hook Form + Zod behavior when changing `src/components/settings/CompanySection.tsx` or related settings cards.
+- Mock `useAuth`, `useToast`, and `supabase.from(...).select/upsert` chains for settings forms.
 
-### Component Tests
-
-```typescript
-import { render, screen } from "@testing-library/react";
-import { KpiCard } from "./KpiCard";
-
-describe("KpiCard", () => {
-  it("renders title and value", () => {
-    render(<KpiCard title="Total Spend" value="$1,000" />);
-    
-    expect(screen.getByText("Total Spend")).toBeInTheDocument();
-    expect(screen.getByText("$1,000")).toBeInTheDocument();
-  });
-
-  it("shows loading skeleton when loading prop is true", () => {
-    render(<KpiCard title="Total Spend" value="$1,000" loading />);
-    
-    // Skeleton has animate-pulse class
-    expect(document.querySelector(".animate-pulse")).toBeInTheDocument();
-  });
-
-  it("displays change percentage", () => {
-    render(<KpiCard title="Total Spend" value="$1,000" change={15.5} />);
-    
-    expect(screen.getByText("15.5%")).toBeInTheDocument();
-  });
-});
-```
-
-### Hook Tests
-
-```typescript
-import { renderHook, act } from "@testing-library/react";
-import { useAuth } from "@/contexts/AuthContext";
-
-describe("useAuth hook", () => {
-  it("provides initial auth state", () => {
-    const { result } = renderHook(() => useAuth(), {
-      wrapper: AuthProvider,
-    });
-    
-    expect(result.current.user).toBeNull();
-    expect(result.current.loading).toBe(true);
-  });
-});
-```
-
-## Common Patterns
-
-### Async Testing
-
-```typescript
-it("fetches data asynchronously", async () => {
-  render(<MyComponent />);
-  
-  // Initial loading state
-  expect(screen.getByText("Loading...")).toBeInTheDocument();
-  
-  // Wait for async data
-  await waitFor(() => {
-    expect(screen.getByText("Data loaded")).toBeInTheDocument();
-  });
-});
-```
-
-### Error Testing
-
-```typescript
-it("displays error message on failure", async () => {
-  const mockError = new Error("Failed to fetch");
-  vi.fn(() => ({ data: null, error: mockError }));
-
-  render(<MyComponent />);
-  
-  await waitFor(() => {
-    expect(screen.getByText("Failed to fetch")).toBeInTheDocument();
-  });
-});
-```
-
-### User Interaction
-
-```typescript
-it("handles button click", async () => {
-  const handleClick = vi.fn();
-  const user = userEvent.setup();
-  
-  render(<Button onClick={handleClick}>Click me</Button>);
-  
-  await user.click(screen.getByRole("button", { name: /click me/i }));
-  
-  expect(handleClick).toHaveBeenCalledTimes(1);
-});
-```
-
-### Context Testing
-
-```typescript
-import { render } from "@testing-library/react";
-import { AuthProvider } from "@/contexts/AuthContext";
-
-const renderWithAuth = (ui: React.ReactNode) => {
-  return render(<AuthProvider>{ui}</AuthProvider>);
-};
-
-it("accesses auth context", () => {
-  renderWithAuth(<TestComponent />);
-  
-  expect(screen.getByText("Not authenticated")).toBeInTheDocument();
-});
-```
-
-## Testing Best Practices
-
-### Priority
-
-1. **Business-critical flows:** Auth, data fetching, form submissions
-2. **Complex components:** Charts, tables, multi-step forms
-3. **Hooks:** Custom hooks with side effects
-4. **Utilities:** Critical helper functions
-
-### Guidelines
-
-- **Test behavior, not implementation:** Focus on user-facing functionality
-- **Meaningful test names:** Describe what should happen
-- **Single assertion per test when possible:** Easier debugging
-- **Clean up after tests:** Reset mocks, clear intervals/timeouts
-- **Use user-event over fireEvent:** More realistic interaction simulation
-
-### Current Testing Gaps
-
-- **No test files for existing components:** Only `example.test.ts` exists
-- **No test utilities:** No custom render with providers
-- **No mocking examples:** Project would benefit from mock factories
+**Google Ads Creative Fixtures:**
+- When tests include Google Ads creative payloads, keep fixtures aligned with `.agents/skills/ad-creative/SKILL.md` and `.agents/skills/google-ads-manager/SKILL.md`: RSA headlines should be 30 characters or fewer, descriptions 90 characters or fewer, and campaign/ad-group vocabulary should match Google Ads concepts.
 
 ---
 
-*Testing analysis: 2026-03-31*
+*Testing analysis: 2026-05-06*

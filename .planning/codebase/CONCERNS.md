@@ -1,187 +1,233 @@
 # Codebase Concerns
 
-**Analysis Date:** 2026-03-31
-
-## Security Concerns
-
-### JWT Verification Disabled on All Edge Functions
-- **Issue:** All Supabase Edge Functions have `verify_jwt = false` in `supabase/config.toml`
-- **Files:** `supabase/config.toml` lines 24-34
-- **Impact:** No authentication verification on API endpoints. Anyone with the function URL can call these endpoints.
-- **Recommendation:** Implement JWT verification or add explicit authorization checks within each function.
-
-### OAuth Tokens Stored in sessionStorage
-- **Issue:** Provider tokens stored in `sessionStorage` which is accessible via JavaScript
-- **Files:** `src/contexts/AuthContext.tsx` lines 54, 99, 103
-- **Current mitigation:** Tokens are only stored in sessionStorage (cleared on tab close), not localStorage
-- **Risk:** Vulnerable to XSS attacks. If any malicious script runs on the page, it can steal the Google OAuth token.
-- **Recommendation:** Consider using httpOnly cookies for token storage if possible, or implement additional CSRF protection.
-
-### No Rate Limiting on Edge Functions
-- **Issue:** Edge functions have no rate limiting configured
-- **Files:** All functions in `supabase/functions/`
-- **Risk:** API abuse, potential quota exhaustion from Google Ads API
-- **Recommendation:** Add rate limiting at Supabase edge or implement request throttling.
-
-### All Edge Functions Return HTTP 200 Even on Errors
-- **Issue:** Error responses return `status: 200` with error JSON, making debugging difficult
-- **Files:** `supabase/functions/google-ads-reports/index.ts` lines 1466-1467, 1564-1567; `supabase/functions/google-ads-accounts/index.ts` lines 76-79, 139-142; `supabase/functions/google-ads-mutate/index.ts` lines 220-223, 288-291
-- **Impact:** Makes it hard to distinguish successful responses from errors in client code and network logs
-- **Recommendation:** Return appropriate HTTP status codes (400, 401, 403, 500).
-
----
-
-## Known Bugs
-
-### demographics_location Report Uses Wrong Function
-- **Issue:** The `demographics_location` report type calls `fetchDemographicsAge` instead of a location-specific query
-- **Files:** `supabase/functions/google-ads-reports/index.ts` line 1548
-- **Trigger:** Navigate to Demographics > Location in dashboard
-- **Workaround:** None - returns incorrect data (age demographics instead of location)
-- **Fix approach:** Implement `fetchDemographicsLocation` function with proper geographic query (country, region, city).
-
-### Missing verify_jwt for Two Edge Functions
-- **Issue:** `google-ads-execute` and `process-attachment` functions not in config.toml
-- **Files:** `supabase/config.toml` (missing entries for functions that exist)
-- **Impact:** These functions also have no JWT verification but are not explicitly configured
-- **Fix approach:** Add entries to config.toml with `verify_jwt = false` for consistency or implement auth.
-
----
+**Analysis Date:** 2026-05-06
 
 ## Tech Debt
 
-### No Test Coverage
-- **Issue:** Only one trivial test exists: `src/test/example.test.ts`
-- **Files:** `src/test/setup.ts`, `src/test/example.test.ts`
-- **Impact:** No protection against regressions, hard to refactor safely
-- **Fix approach:** Add tests for: AuthContext, DashboardContext, hook utilities, edge function logic.
+**Unauthenticated Supabase Edge Function Surface:**
+- Issue: Every configured edge function has `verify_jwt = false`, including read endpoints, mutation endpoints, AI proxying, CLI token exchange, and health/config endpoints.
+- Files: `supabase/config.toml`, `supabase/functions/analyze-ads/index.ts`, `supabase/functions/google-ads-reports/index.ts`, `supabase/functions/google-ads-mutate/index.ts`, `supabase/functions/google-ads-execute/index.ts`, `supabase/functions/meta-reports/index.ts`, `supabase/functions/meta-mutate/index.ts`, `supabase/functions/get-cli-session/index.ts`, `supabase/functions/get-meta-cli-session/index.ts`, `supabase/functions/process-attachment/index.ts`
+- Impact: Function URLs can be invoked directly from outside the app. Most functions rely on bearer-like tokens in request bodies rather than Supabase auth context, so leaked provider tokens, Meta tokens, CLI session tokens, or AI API keys are enough to access data or mutate ad accounts.
+- Fix approach: Enable JWT verification where browser-authenticated users call functions, pass the Supabase session bearer token from the client, and restrict no-JWT functions to purpose-built public callbacks with separate validation.
 
-### Type Safety Gaps in Edge Functions
-- **Issue:** Heavy use of `any` types throughout edge functions
-- **Files:** `supabase/functions/google-ads-reports/index.ts`, `supabase/functions/analyze-ads/index.ts`
-- **Impact:** No compile-time type checking, easy to introduce subtle bugs
-- **Fix approach:** Define interfaces for API request/response shapes.
+**Large Google Ads Report Module:**
+- Issue: `supabase/functions/google-ads-reports/index.ts` is a 1,571-line module containing GAQL construction, API calls, special-case report fetchers, and transformation logic in one file.
+- Files: `supabase/functions/google-ads-reports/index.ts`
+- Impact: Report additions and fixes have high regression risk because query strings, report-type routing, and shape transformations are tightly coupled.
+- Fix approach: Split by report family into query builders, fetch helpers, and transformer modules; add unit fixtures for each report type before refactoring.
 
-### Duplicate Code in google-ads-reports
-- **Issue:** `fetchNegativeKeywordsBothLevels` and `fetchNegativeKeywordsWithErrorDetails` have nearly identical logic
-- **Files:** `supabase/functions/google-ads-reports/index.ts` lines 1188-1293, 1295-1415
-- **Impact:** Maintainability burden
-- **Fix approach:** Consolidate into single function with error handling built-in.
+**AI Tool Definitions Duplicated Across Server and Client:**
+- Issue: Tool names, risk labels, descriptions, and schemas are defined in multiple places and can drift.
+- Files: `supabase/functions/analyze-ads/index.ts`, `supabase/functions/google-ads-execute/index.ts`, `src/hooks/use-chat-stream.ts`, `src/lib/ai/tools.ts`, `src/components/dashboard/ToolApprovalDialog.tsx`
+- Impact: The model can emit a tool call that the client labels differently or the executor handles with different required inputs, causing failed or unsafe tool execution.
+- Fix approach: Define a single shared tool contract used by prompt construction, approval UI, client execution routing, and edge function validation.
 
-### No Request Validation in Edge Functions
-- **Issue:** No input sanitization or schema validation on incoming requests
-- **Files:** All edge functions
-- **Risk:** Malformed requests could cause runtime errors or unexpected behavior
-- **Recommendation:** Add Zod validation for request bodies.
+**Client-Side Report Caching Bypasses Server Cache Schema:**
+- Issue: Google and Meta report hooks cache responses in `localStorage`, while the typed `reports_cache` table is present but not used by current hooks or edge functions.
+- Files: `src/hooks/useGoogleAdsReport.ts`, `src/hooks/useMetaReport.ts`, `src/types/database.ts`
+- Impact: Cache data is per-browser, unencrypted, not shared across sessions, and not centrally invalidated; large reports can exhaust browser storage while server-side quota protection remains absent.
+- Fix approach: Move report caching behind edge functions with TTL and user/account/date keys, then use React Query only as an in-memory client cache.
 
-### Reports Cache Table Not Used
-- **Issue:** `reports_cache` table exists in schema but caching is never implemented
-- **Files:** `src/types/database.ts` lines 93-124
-- **Impact:** Every dashboard request hits Google Ads API directly, slower performance
-- **Fix approach:** Implement caching logic with TTL in edge functions.
+**Generated Database Types Do Not Cover Current Migrations:**
+- Issue: `src/types/database.ts` includes earlier tables such as `profiles`, `google_connections`, `ads_accounts`, `reports_cache`, and `user_ai_settings`, but current Meta and CLI tables from later migrations are not represented.
+- Files: `src/types/database.ts`, `supabase/migrations/20260408000000_cli_sessions.sql`, `supabase/migrations/20260408100000_meta_foundation.sql`, `supabase/migrations/20260408200000_meta_cli_sessions.sql`
+- Impact: Code that touches `meta_connections`, `meta_accounts`, `companies`, `cli_sessions`, and `meta_cli_sessions` uses casts or untyped query results, weakening compile-time protection around sensitive token tables.
+- Fix approach: Regenerate Supabase types after migrations and remove `supabase as any` call sites where typed table definitions exist.
 
----
+## Known Bugs
 
-## Performance Concerns
+**Google Ads Execute Budget Update Uses Campaign ID as Budget ID:**
+- Symptoms: `updateCampaignBudget` in the tool execution endpoint builds `customers/{customerId}/campaignBudgets/{campaignId}` even though campaign budgets have separate resource IDs.
+- Files: `supabase/functions/google-ads-execute/index.ts`
+- Trigger: AI tool execution calls `updateCampaignBudget` through `google-ads-execute` with a campaign ID instead of a campaign budget resource name.
+- Workaround: Prefer `google-ads-mutate` for budget mutations because it accepts `campaignBudgetId`; avoid enabling the `google-ads-execute` budget tool until IDs are corrected.
 
-### No Pagination on Large Datasets
-- **Issue:** Google Ads queries return all results without pagination
-- **Files:** `supabase/functions/google-ads-reports/index.ts`
-- **Impact:** Large accounts (thousands of keywords/ads) will be slow or timeout
-- **Fix approach:** Implement paged fetching with limit/offset or seek method.
+**Google Ads Execute Campaign-Level Bid Adjustment Ignores New Bid Amount:**
+- Symptoms: `adjustBid` sets `manualCpc.enhancedCpcEnabled = false` for campaign-level requests and does not apply `newBid`.
+- Files: `supabase/functions/google-ads-execute/index.ts`
+- Trigger: AI tool execution calls `adjustBid` with only `campaignId`, `bidType`, and `newBid`.
+- Workaround: Restrict bid adjustment tools to ad group or keyword-level resource names until campaign-level behavior is redesigned.
 
-### Multiple Sequential API Calls in fetchConversionsSpecial
-- **Issue:** Makes two separate API calls that could be combined
-- **Files:** `supabase/functions/google-ads-reports/index.ts` lines 625-808
-- **Impact:** Slower response times
-- **Fix approach:** Combine queries or parallelize with Promise.all.
+**Meta OAuth State Is Only User ID:**
+- Symptoms: Meta callback treats the `state` query parameter as `user_id` and upserts a long-lived token for that user without nonce/session verification.
+- Files: `supabase/functions/meta-auth/index.ts`, `src/components/settings/MetaAdsSection.tsx`
+- Trigger: Meta OAuth callback receives a valid `code` and attacker-controlled or stale `state` value.
+- Workaround: None detected; replace raw user ID state with a signed, single-use OAuth state nonce tied to the authenticated user.
 
-### No Retry Logic for Google Ads API Calls
-- **Issue:** Single fetch attempt with no retry on transient failures
-- **Files:** All edge functions
-- **Impact:** Unreliable in production (network issues, rate limits)
-- **Recommendation:** Add exponential backoff retry (3 attempts).
+**One Hook Test Does Not Actually Re-Mock Dashboard Context:**
+- Symptoms: The disabled-query test creates a mock with `vi.doMock` after the hook module is already imported, so it only verifies `{ enabled: false }`, not the no-account branch it names.
+- Files: `src/test/useGoogleAdsReport.test.tsx`
+- Trigger: Running the existing `useGoogleAdsReport` test suite.
+- Workaround: Split no-account behavior into a separate test module with module reset or make the hook dependencies injectable for tests.
 
----
+## Security Considerations
 
-## Database Concerns
+**Ad Account Mutation Endpoints Trust Body Tokens:**
+- Risk: Any caller with a Google provider token or Meta access token can invoke campaign status, bid, budget, and negative keyword mutations directly because endpoints do not bind the token/account to the authenticated Supabase user.
+- Files: `supabase/functions/google-ads-mutate/index.ts`, `supabase/functions/google-ads-execute/index.ts`, `supabase/functions/meta-mutate/index.ts`, `src/hooks/use-chat-stream.ts`
+- Current mitigation: Client-side tool approval UI exists in `src/components/dashboard/ToolApprovalDialog.tsx`, and mutation functions validate request shape with Zod in `supabase/functions/google-ads-mutate/index.ts` and `supabase/functions/meta-mutate/index.ts`.
+- Recommendations: Enforce server-side user/account ownership, require an authenticated Supabase JWT, record immutable audit logs for all mutations, and keep client approval as UX rather than authorization.
 
-### No Indexes on Common Query Columns
-- **Issue:** `user_id`, `customer_id`, `date_start`, `date_end` likely unindexed
-- **Files:** Migrations in `supabase/migrations/`
-- **Impact:** Slow queries as data grows
-- **Fix approach:** Add composite indexes: (user_id, customer_id), (customer_id, date_start, date_end).
+**Google Provider Token Stored in Browser Session Storage:**
+- Risk: XSS can read `google_provider_token` and use it against unauthenticated edge functions or Google Ads API proxy endpoints.
+- Files: `src/contexts/AuthContext.tsx`, `src/hooks/useGoogleAdsReport.ts`, `src/hooks/useCliSession.ts`, `src/pages/ConnectGoogleAds.tsx`, `src/pages/dashboard/Campaigns.tsx`, `src/pages/dashboard/SearchTerms.tsx`
+- Current mitigation: The token uses `sessionStorage` rather than `localStorage`, and `useGoogleAdsReport` clears it after unauthenticated API errors.
+- Recommendations: Move Google Ads API access to server-managed tokens or short-lived server sessions, keep provider tokens out of JavaScript-accessible storage, and add strict CSP before expanding attachment or rich chat rendering.
 
-### Token Encryption Method Unknown
-- **Issue:** Tokens stored as `access_token_encrypted` but encryption method not visible in codebase
-- **Files:** `src/types/database.ts` lines 38-66
-- **Risk:** May be using weak or no encryption
-- **Recommendation:** Verify encryption is implemented server-side or via Supabase vault.
+**Meta Tokens Are Stored and Read as Plain Text:**
+- Risk: Long-lived Meta access tokens are stored as plain `TEXT` and are readable by the owning browser client through RLS; CLI session tokens also expose raw access tokens via token lookup.
+- Files: `supabase/migrations/20260408100000_meta_foundation.sql`, `supabase/migrations/20260408200000_meta_cli_sessions.sql`, `src/hooks/useMetaReport.ts`, `src/hooks/useMetaCliSession.ts`, `supabase/functions/get-meta-cli-session/index.ts`
+- Current mitigation: RLS limits direct table access to the owning authenticated user, and CLI sessions expire after two hours.
+- Recommendations: Store encrypted tokens using a server-only key or Supabase Vault, avoid selecting raw access tokens in browser code, and proxy Meta API calls through authenticated edge functions.
 
----
+**CLI Session Token Is a Bearer Secret:**
+- Risk: `get-cli-session` and `get-meta-cli-session` intentionally bypass RLS with service role and return provider tokens when given a UUID session token.
+- Files: `supabase/functions/get-cli-session/index.ts`, `supabase/functions/get-meta-cli-session/index.ts`, `supabase/migrations/20260408000000_cli_sessions.sql`, `supabase/migrations/20260408200000_meta_cli_sessions.sql`
+- Current mitigation: Session tokens are UUIDs, unique, and expire after two hours.
+- Recommendations: Treat session tokens as credentials, add one-time reveal or rotation, hash session tokens at rest, add revocation/audit metadata, and rate-limit token lookup failures.
+
+**AI API Key Naming and Storage Are Inconsistent:**
+- Risk: The app labels the user setting as Gemini in UI comments while the database column remains `openai_api_key`; the full key is stored in a user-readable table.
+- Files: `supabase/migrations/20250205_create_user_ai_settings.sql`, `src/components/settings/AISettingsCard.tsx`, `src/hooks/use-chat-session.ts`, `src/pages/dashboard/Recommendations.tsx`, `src/types/database.ts`
+- Current mitigation: RLS restricts access to the owning user; UI masks existing keys after load.
+- Recommendations: Rename the field through a migration, encrypt keys server-side, and pass AI calls through authenticated edge functions without exposing stored keys back to the browser.
+
+**Wildcard CORS on Sensitive Functions:**
+- Risk: All public functions return `Access-Control-Allow-Origin: *`, including functions that accept provider tokens, Meta tokens, AI keys, attachments, and mutation commands.
+- Files: `supabase/functions/analyze-ads/index.ts`, `supabase/functions/google-ads-reports/index.ts`, `supabase/functions/google-ads-mutate/index.ts`, `supabase/functions/google-ads-execute/index.ts`, `supabase/functions/meta-reports/index.ts`, `supabase/functions/meta-mutate/index.ts`, `supabase/functions/process-attachment/index.ts`
+- Current mitigation: Browser CORS alone is not relied upon for direct API security; functions require body tokens for most sensitive work.
+- Recommendations: Restrict production origins, add explicit authentication/authorization, and add rate limiting at the edge gateway.
+
+## Performance Bottlenecks
+
+**Google Ads SearchStream Responses Are Fully Materialized:**
+- Problem: Every report fetch reduces full `searchStream` batches into memory before transforming data.
+- Files: `supabase/functions/google-ads-reports/index.ts`, `supabase/functions/google-ads-accounts/index.ts`, `supabase/functions/google-ads-mutate/index.ts`
+- Cause: The implementation does not page, cap, stream-transform, or persist intermediate results for large accounts.
+- Improvement path: Add report-specific limits, server-side cache TTLs, pagination controls, and streaming transformations for large report families such as keywords, search terms, ads, and audiences.
+
+**Meta Reports Hard-Limit Lists to 200 Without Pagination:**
+- Problem: Campaign, ad set, and ad reports request `limit=200` and do not follow `paging.next`.
+- Files: `supabase/functions/meta-reports/index.ts`
+- Cause: The Meta report function maps only the first Graph API page.
+- Improvement path: Implement cursor pagination with a max page budget and surface partial-data warnings when limits are reached.
+
+**AI Query Tool Loop Can Multiply Upstream Latency:**
+- Problem: `analyze-ads` can perform up to four non-streaming Gemini calls to resolve data-query tools, then perform a final streaming call.
+- Files: `supabase/functions/analyze-ads/index.ts`
+- Cause: Tool resolution loops are serial and call Google/Meta report functions inside each iteration.
+- Improvement path: Bound tool loops per request type, add request timeouts, reuse report cache results, and return transparent partial responses when the loop budget is exhausted.
+
+**Attachment Processing Has No Size Guard:**
+- Problem: Audio and image data are accepted as base64 strings without schema validation or max payload checks.
+- Files: `supabase/functions/process-attachment/index.ts`, `src/components/dashboard/ChatAttachments.tsx`, `src/hooks/use-chat-stream.ts`
+- Cause: Request body parsing and provider calls happen before explicit size and MIME allow-list enforcement.
+- Improvement path: Validate payload size and MIME type before decoding or forwarding, reject oversized files with 413, and move large uploads to storage-backed processing.
 
 ## Fragile Areas
 
-### AuthContext Token Restoration
-- **Issue:** Complex token restoration logic with potential race conditions
-- **Files:** `src/contexts/AuthContext.tsx` lines 79-112
-- **Why fragile:** Relies on sessionStorage + Supabase session + provider_token, order matters
-- **Safe modification:** Add integration tests covering all token states
-- **Test coverage:** Currently none
+**AI Chat, Tool Approval, and Execution Flow:**
+- Files: `src/hooks/use-chat-stream.ts`, `src/components/dashboard/chat/ChatPanel.tsx`, `src/components/dashboard/ToolApprovalDialog.tsx`, `supabase/functions/analyze-ads/index.ts`, `supabase/functions/google-ads-execute/index.ts`, `supabase/functions/meta-mutate/index.ts`
+- Why fragile: The same chat path streams model output, persists chat history, handles attachments, creates tool approval requests, and executes live ad-platform mutations.
+- Safe modification: Change one tool at a time, add contract tests around tool-call payloads, and verify both approval UI and server execution behavior for Google and Meta.
+- Test coverage: No tests detected for `use-chat-stream`, chat persistence hooks, tool approval state, `analyze-ads`, `google-ads-execute`, or `meta-mutate`.
 
-### Hardcoded System Prompts
-- **Issue:** Large system prompt strings embedded in edge function code
-- **Files:** `supabase/functions/analyze-ads/index.ts` lines 125-160
-- **Why fragile:** Hard to maintain, test, or version control
-- **Recommendation:** Move to separate configuration or database table.
+**Auth and Account Selection State:**
+- Files: `src/contexts/AuthContext.tsx`, `src/contexts/DashboardContext.tsx`, `src/pages/ConnectGoogleAds.tsx`, `src/components/settings/MetaAdsSection.tsx`
+- Why fragile: Google auth state depends on Supabase session, provider token restoration, `sessionStorage`, selected account persistence, and separate Meta connection state.
+- Safe modification: Preserve current restoration order unless tests are expanded; add regression cases for expired provider token, account disconnect, Meta disconnect, and multi-platform switching.
+- Test coverage: `src/test/AuthContext.test.tsx` covers basic Google session restoration but not Supabase OAuth redirects, selected account loading, Meta connection flows, or disconnect side effects.
 
-### CORS Wildcard "*" Allowed
-- **Issue:** All edge functions use `"Access-Control-Allow-Origin": "*"`
-- **Files:** All functions in `supabase/functions/`
-- **Impact:** Allows any website to call these APIs
-- **Recommendation:** Restrict to specific domains in production.
+**Database Migrations and Type Drift:**
+- Files: `supabase/migrations/20250205_create_user_ai_settings.sql`, `supabase/migrations/20260408000000_cli_sessions.sql`, `supabase/migrations/20260408100000_meta_foundation.sql`, `supabase/migrations/20260408200000_meta_cli_sessions.sql`, `src/types/database.ts`
+- Why fragile: Later migrations introduce sensitive tables not present in generated client types, while legacy names such as `openai_api_key` remain in active Gemini-related code.
+- Safe modification: Regenerate types immediately after schema changes and keep table/column renames behind compatibility migrations.
+- Test coverage: No migration tests or typed Supabase query tests detected.
 
----
+**Google Ads GAQL Query Construction:**
+- Files: `supabase/functions/google-ads-reports/index.ts`, `supabase/functions/google-ads-mutate/index.ts`, `supabase/functions/google-ads-accounts/index.ts`
+- Why fragile: Query strings are assembled manually, report-type values map to custom branches, and Google Ads API version is hardcoded to `v20` in multiple functions.
+- Safe modification: Centralize API version and query builders, and validate each GAQL query against fixture responses before changing report types.
+- Test coverage: `src/test/useGoogleAdsReport.test.tsx` tests client hook invocation only; no edge-function query or transformer tests detected.
+
+## Scaling Limits
+
+**Browser Storage Cache:**
+- Current capacity: Limited by each browser's `localStorage` quota, commonly around a few MB per origin.
+- Limit: Large keyword, search term, ads, audience, or Meta report payloads can fail cache writes silently and force repeated API calls.
+- Scaling path: Use server-side `reports_cache` with TTL, compression if needed, and account/date/report indexes.
+
+**Two-Hour CLI Sessions With Raw Tokens:**
+- Current capacity: Each CLI session row carries one raw provider token or Meta access token and one selected account.
+- Limit: Multiple accounts, token rotation, revocation tracking, and auditability are limited by the current schema.
+- Scaling path: Store hashed session tokens, encrypted provider credentials, account scopes, revocation timestamps, last-used metadata, and mutation audit rows.
+
+**Single Edge Function Per Reporting Platform:**
+- Current capacity: One large Google report endpoint and one Meta report endpoint handle all read report types.
+- Limit: Heavy report families compete with lightweight overview requests and share deployment/runtime failure modes.
+- Scaling path: Split high-volume reports from overview reads, add per-report timeout budgets, and cache expensive reports separately.
+
+## Dependencies at Risk
+
+**Google Ads API Version v20:**
+- Risk: The active functions target Google Ads API `v20`, while project guidance still references v18 in `AGENTS.md`.
+- Impact: Future API deprecations or schema changes can break manually written GAQL queries across report and mutation functions.
+- Migration plan: Centralize `API_VERSION`, document the supported API version in `.planning/codebase/STACK.md` and `AGENTS.md`, and run contract checks when upgrading.
+
+**Gemini API Stored Behind Legacy OpenAI Naming:**
+- Risk: User-facing AI behavior depends on Gemini endpoints while database and types retain `openai_api_key` naming.
+- Impact: Future OpenAI/Gemini provider additions will be harder to reason about and may route keys to the wrong provider.
+- Migration plan: Introduce provider-specific credential records or a normalized `ai_provider_settings` table, then migrate `openai_api_key` to a clearly named Gemini key field.
+
+**Deno URL Imports Without Locking:**
+- Risk: Edge functions import Deno std, Supabase JS, and Zod directly from remote URLs.
+- Impact: Local and deployed builds can drift if remote dependency resolution changes.
+- Migration plan: Use Supabase import maps or pinned vendored versions for Deno dependencies.
 
 ## Missing Critical Features
 
-### Error Boundaries in React
-- **Issue:** No React error boundaries to catch component crashes
-- **Impact:** Full app crashes on component errors
-- **Fix approach:** Add error boundary around main content areas.
+**Server-Side Authorization for Account Ownership:**
+- Problem: Edge functions receive `customerId`, `accountId`, provider tokens, and user IDs from the client without consistently checking ownership against Supabase auth.
+- Blocks: Safe production use of AI-driven mutations, direct API access, and shared/public deployment.
 
-### Offline Handling
-- **Issue:** No offline detection or graceful degradation
-- **Impact:** App shows errors when network is down
-- **Recommendation:** Add online/offline event listeners and user feedback.
+**Mutation Audit Trail and Rollback Metadata:**
+- Problem: Google and Meta mutation endpoints do not persist who approved a change, which account/resource changed, the before/after value, or the model recommendation that caused it.
+- Blocks: Compliance review, debugging accidental budget/status changes, and reliable rollback.
 
-### Loading States Consistency
-- **Issue:** Different components handle loading differently (some use skeletons, some spinners, some nothing)
-- **Impact:** Inconsistent UX
-- **Recommendation:** Standardize loading state components.
+**Rate Limiting and Abuse Protection:**
+- Problem: No function-level rate limits, token lookup attempt limits, AI request budgets, or Google/Meta quota backoff policies are detected.
+- Blocks: Cost control for AI/attachment processing and quota protection for Google Ads and Meta APIs.
 
----
+**Open Questions for Next Planning Pass:**
+- Problem: The repo contains Meta Ads functionality and Gemini AI behavior while core project docs still emphasize Google Ads and OpenAI.
+- Blocks: Clear product scope, credential policy, API provider naming, and roadmap priority decisions.
 
 ## Test Coverage Gaps
 
-### Untested: All Authentication Flows
-- **What's not tested:** Login, logout, token refresh, session restoration
-- **Files:** `src/contexts/AuthContext.tsx`
-- **Risk:** Auth regressions would go unnoticed
-- **Priority:** High
+**Untested Edge Functions:**
+- What's not tested: Request validation, CORS/auth behavior, Google Ads report transformations, Meta report pagination/token refresh, attachment processing, AI SSE translation, and mutation error handling.
+- Files: `supabase/functions/analyze-ads/index.ts`, `supabase/functions/google-ads-reports/index.ts`, `supabase/functions/google-ads-mutate/index.ts`, `supabase/functions/google-ads-execute/index.ts`, `supabase/functions/meta-reports/index.ts`, `supabase/functions/meta-mutate/index.ts`, `supabase/functions/process-attachment/index.ts`
+- Risk: API contract changes or provider response changes can break dashboards and AI tools without test failures.
+- Priority: High
 
-### Untested: Dashboard Data Fetching
-- **What's not tested:** useGoogleAdsReport hook, report transformations
-- **Files:** `src/hooks/useGoogleAdsReport.ts`
-- **Risk:** Data parsing bugs in edge cases
-- **Priority:** Medium
+**Untested AI Tool Execution Flow:**
+- What's not tested: Tool-call parsing, approval modal state, approved/rejected execution paths, Google vs Meta tool routing, and persistence of tool-call parts in chat history.
+- Files: `src/hooks/use-chat-stream.ts`, `src/components/dashboard/ToolApprovalDialog.tsx`, `src/components/dashboard/chat/ChatPanel.tsx`, `src/hooks/use-chat-session.ts`, `supabase/migrations/20260331_add_parts_to_chat_messages.sql`
+- Risk: A model-emitted mutation can be routed incorrectly or fail after approval with poor recovery.
+- Priority: High
 
-### Untested: Edge Functions
-- **What's not tested:** All 6 edge functions have no test coverage
-- **Files:** `supabase/functions/**/*.ts`
-- **Risk:** API contract changes break frontend silently
-- **Priority:** Medium
+**Untested Meta Ads Integration:**
+- What's not tested: Meta OAuth callback, token refresh, account loading, Meta report hook caching, Meta CLI session flow, and Meta mutation endpoints.
+- Files: `supabase/functions/meta-auth/index.ts`, `supabase/functions/meta-accounts/index.ts`, `supabase/functions/meta-reports/index.ts`, `supabase/functions/meta-mutate/index.ts`, `src/hooks/useMetaReport.ts`, `src/hooks/useMetaCliSession.ts`, `src/components/settings/MetaAdsSection.tsx`
+- Risk: Token expiry, pagination, account switching, or mutation regressions can ship unnoticed.
+- Priority: High
+
+**Limited Frontend Coverage:**
+- What's not tested: Dashboard pages, report tables, recommendations, data stream context, offline context, settings forms, and account selection persistence.
+- Files: `src/pages/dashboard/*.tsx`, `src/pages/dashboard/meta/*.tsx`, `src/contexts/DashboardContext.tsx`, `src/contexts/DataStreamContext.tsx`, `src/contexts/OfflineContext.tsx`, `src/components/settings/*.tsx`
+- Risk: Visual and state-management regressions can break core workflows despite passing the current small test suite.
+- Priority: Medium
 
 ---
 
-*Concerns audit: 2026-03-31*
+*Concerns audit: 2026-05-06*
