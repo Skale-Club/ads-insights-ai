@@ -1,4 +1,4 @@
-import { LayoutDashboard, Megaphone, KeyRound, Search, Lightbulb, Settings, FolderOpen, FileText, Users, DollarSign, BarChart3, Target, Layers, LucideIcon } from 'lucide-react';
+import { LayoutDashboard, Megaphone, KeyRound, Search, Lightbulb, Settings, FolderOpen, FileText, Users, DollarSign, BarChart3, Target, Layers, Globe, LucideIcon } from 'lucide-react';
 
 export interface NavItem {
   path: string;
@@ -26,6 +26,11 @@ export const metaNavItems: NavItem[] = [
   { path: '/dashboard/meta/campaigns', label: 'Campaigns', icon: Megaphone },
   { path: '/dashboard/meta/adsets', label: 'Ad Sets', icon: Layers },
   { path: '/dashboard/meta/ads', label: 'Ads', icon: FileText },
+  { path: '/dashboard/meta/audiences', label: 'Audiences', icon: Users },
+  { path: '/dashboard/meta/placements', label: 'Placements', icon: Globe },
+  { path: '/dashboard/meta/conversions', label: 'Conversions', icon: Target },
+  { path: '/dashboard/meta/reports', label: 'Reports', icon: BarChart3 },
+  { path: '/dashboard/meta/budgets', label: 'Budgets', icon: DollarSign },
   { path: '/dashboard/recommendations', label: 'AI Recommendations', icon: Lightbulb },
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
