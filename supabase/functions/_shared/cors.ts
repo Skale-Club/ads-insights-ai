@@ -16,10 +16,19 @@ function getAllowlist(): string[] {
     .filter((s) => s.length > 0);
 }
 
+// Convert a pattern with optional `*` wildcards (e.g. "https://ads-*-foo.vercel.app")
+// into a strict regex anchored to the full origin.
+function patternToRegex(pattern: string): RegExp {
+  const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[^/]*");
+  return new RegExp(`^${escaped}$`);
+}
+
 function isAllowedOrigin(origin: string | null, allowlist: string[]): boolean {
   if (allowlist.length === 0) return true; // dev fallback: allow all
   if (!origin) return false;
-  return allowlist.includes(origin);
+  return allowlist.some((pattern) =>
+    pattern.includes("*") ? patternToRegex(pattern).test(origin) : pattern === origin,
+  );
 }
 
 export function corsHeadersFor(req: Request): Record<string, string> {
