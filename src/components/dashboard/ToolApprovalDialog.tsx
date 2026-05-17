@@ -52,7 +52,27 @@ const toolDescriptions: Record<string, string> = {
     createBudget: 'Create a new budget that can be assigned to campaigns',
     updateCampaignBudget: 'Change the daily budget allocation for a campaign',
     queryAdsData: 'Retrieve performance data from your Google Ads account',
+    // Meta — existing
+    queryMetaData: 'Retrieve performance data from your Meta Ads account',
+    analyzeCreative: 'Generate creative analysis and ad copy suggestions',
+    updateBudget: 'Change the budget for a Meta ad set or campaign',
+    // Meta — new (Phase 02)
+    createCampaign: 'Create a new Meta campaign (will start PAUSED so you can review before activating)',
+    createAdSet: 'Create a new ad set under an existing Meta campaign',
+    createAd: 'Create a new ad under an existing ad set (will start PAUSED)',
+    duplicateCampaign: 'Duplicate a Meta campaign — optionally including all ad sets and ads (deep copy)',
+    duplicateAdSet: 'Duplicate a Meta ad set — optionally into a different campaign',
+    updateTargeting: 'Update targeting (geo, age, gender, interests, audiences) on a Meta ad set',
+    updateBidStrategy: 'Change the bid strategy on a Meta campaign or ad set',
+    updateCreative: 'Update an ad creative (copy, CTA, link, or asset swap)',
+    updateSchedule: 'Update ad set start/end dates or dayparting schedule',
+    createCustomAudience: 'Create a new Meta custom audience',
+    createLookalikeAudience: 'Create a new Meta lookalike audience from a source audience',
+    batchPauseEnable: 'Pause or enable multiple Meta entities in one batch (up to 50)',
+    createSplitTest: 'Set up a Meta A/B split test (creative, audience, or placement)',
 };
+
+const META_APP_REVIEW_GATED = new Set(['createCustomAudience', 'createLookalikeAudience']);
 
 export function ToolApprovalDialog({
     request,
@@ -67,7 +87,7 @@ export function ToolApprovalDialog({
 
     const config = riskConfig[request.riskLevel];
     const Icon = config.icon;
-    const toolDescription = toolDescriptions[request.toolName] || 'Execute an action on your Google Ads account';
+    const toolDescription = toolDescriptions[request.toolName] || 'Execute an action on your ads account';
 
     const handleDeny = () => {
         if (showDenyInput) {
@@ -92,7 +112,7 @@ export function ToolApprovalDialog({
                         Action Approval Required
                     </DialogTitle>
                     <DialogDescription>
-                        The AI assistant wants to perform an action on your Google Ads account
+                        The AI assistant wants to perform an action on your ads account
                     </DialogDescription>
                 </DialogHeader>
 
@@ -118,6 +138,15 @@ export function ToolApprovalDialog({
                         {request.description}
                     </p>
 
+                    {META_APP_REVIEW_GATED.has(request.toolName) && (
+                        <div className="rounded-lg border border-yellow-300 dark:border-yellow-700 bg-yellow-50 dark:bg-yellow-950 p-3 text-sm">
+                            <p className="font-medium text-yellow-900 dark:text-yellow-200">Meta App Review required</p>
+                            <p className="text-yellow-800 dark:text-yellow-300 mt-1">
+                                This action needs <code className="text-xs">ads_management_standard_access</code> and the <code className="text-xs">custom_audiences</code> scope on your Meta access token. If your app has not completed App Review, the action will fail with a permission error.
+                            </p>
+                        </div>
+                    )}
+
                     {showDenyInput && (
                         <div className="space-y-2">
                             <label className="text-sm font-medium">Reason for denying (optional):</label>
@@ -142,7 +171,7 @@ export function ToolApprovalDialog({
                     </Button>
                     <Button
                         onClick={handleApprove}
-                        disabled={isLoading || request.riskLevel === 'high'}
+                        disabled={isLoading}
                         className="gap-2"
                     >
                         {isLoading ? (
@@ -161,7 +190,7 @@ export function ToolApprovalDialog({
 
                 {request.riskLevel === 'high' && (
                     <p className="text-xs text-destructive text-center">
-                        High-risk actions require manual confirmation in Google Ads
+                        High-risk actions affect spend — review the details above before approving
                     </p>
                 )}
             </DialogContent>
