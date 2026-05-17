@@ -13,7 +13,7 @@ const META_API = "https://graph.facebook.com/v20.0";
 const RequestSchema = z.object({
   accessToken: z.string().min(1, "accessToken is required"),
   accountId: z.string().regex(/^act_\d+$/, "accountId must be in format act_XXXXXXXXX"),
-  reportType: z.enum(["overview", "campaigns", "adsets", "ads", "insights_by_placement", "daily_performance"]),
+  reportType: z.enum(["overview", "campaigns", "adsets", "ads", "insights_by_placement", "daily_performance", "audiences", "placements", "conversions", "pixel-events", "budgets-detail"]),
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "startDate must be YYYY-MM-DD"),
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "endDate must be YYYY-MM-DD"),
   userId: z.string().optional(),
@@ -279,6 +279,97 @@ serve(async (req) => {
         conversions: extractAction(row.actions ?? [], "offsite_conversion.fb_pixel_purchase")
           || extractAction(row.actions ?? [], "purchase"),
       }));
+    }
+
+    else if (reportType === "audiences") {
+      const fields = "impressions,clicks,spend,ctr,cpc,actions,action_values";
+      async function fetchBreakdown(bd: string) {
+        const json = await metaGet(
+          `${META_API}/${accountId}/insights?fields=${fields}&breakdowns=${bd}&time_range=${tr}&level=account&access_token=${token}`,
+        );
+        return json.data ?? [];
+      }
+      const [ageGender, region, device, publisher] = await Promise.all([
+        fetchBreakdown("age,gender"),
+        fetchBreakdown("region"),
+        fetchBreakdown("device_platform"),
+        fetchBreakdown("publisher_platform"),
+      ]);
+      const mapRow = (label: string) => (row: any) => {
+        const spend = parseFloat(row.spend ?? "0");
+        const conv = extractAction(row.actions ?? [], "offsite_conversion.fb_pixel_purchase")
+          || extractAction(row.actions ?? [], "purchase");
+        return {
+          id: label,
+          label,
+          impressions: parseInt(row.impressions ?? "0"),
+          clicks: parseInt(row.clicks ?? "0"),
+          spend,
+          ctr: parseFloat(row.ctr ?? "0"),
+          cpc: parseFloat(row.cpc ?? "0"),
+          conversions: conv,
+          costPerConversion: conv > 0 ? parseFloat((spend / conv).toFixed(2)) : 0,
+          roas: calcRoas(row.action_values ?? [], spend),
+        };
+      };
+      data = {
+        ageGender: ageGender.map((r: any) => mapRow(`${r.age ?? ""} ${r.gender ?? ""}`.trim() || "Unknown")(r)),
+        region: region.map((r: any) => mapRow(r.region ?? "Unknown")(r)),
+        device: device.map((r: any) => mapRow(r.device_platform ?? "Unknown")(r)),
+        publisher: publisher.map((r: any) => mapRow(r.publisher_platform ?? "Unknown")(r)),
+      };
+    }
+
+    else if (reportType === "placements") {
+      const fields = "impressions,clicks,spend,ctr,cpc,actions,action_values,reach,frequency";
+      const json = await metaGet(
+        `${META_API}/${accountId}/insights?fields=${fields}&breakdowns=publisher_platform,platform_position,impression_device&time_range=${tr}&level=account&access_token=${token}`,
+      );
+      data = (json.data ?? []).map((row: any, i: number) => {
+        const spend = parseFloat(row.spend ?? "0");
+        const conv = extractAction(row.actions ?? [], "offsite_conversion.fb_pixel_purchase")
+          || extractAction(row.actions ?? [], "purchase");
+        return {
+          id: `${row.publisher_platform}-${row.platform_position}-${row.impression_device}-${i}`,
+          publisherPlatform: row.publisher_platform ?? "unknown",
+          platformPosition: row.platform_position ?? "unknown",
+          impressionDevice: row.impression_device ?? "unknown",
+          placementLabel: placementLabel(row.publisher_platform ?? "", row.platform_position ?? ""),
+          impressions: parseInt(row.impressions ?? "0"),
+          clicks: parseInt(row.clicks ?? "0"),
+          spend,
+          ctr: parseFloat(row.ctr ?? "0"),
+          cpc: parseFloat(row.cpc ?? "0"),
+          reach: parseInt(row.reach ?? "0"),
+          frequency: parseFloat(row.frequency ?? "0"),
+          conversions: conv,
+          roas: calcRoas(row.action_values ?? [], spend),
+        };
+      });
+    }
+
+    else if (reportType === "pixel-events") {
+      const fields = "spend,actions,action_values,cost_per_action_type";
+      const json = await metaGet(
+        `${META_API}/${accountId}/insights?fields=${fields}&time_range=${tr}&level=account&access_token=${token}`,
+      );
+      const row = json.data?.[0] ?? {};
+      const actions: any[] = row.actions ?? [];
+      const actionValues: any[] = row.action_values ?? [];
+      const costPerAction: any[] = row.cost_per_action_type ?? [];
+      data = actions.map((a: any) => {
+        const count = parseFloat(a.value ?? "0");
+        const value = extractActionValue(actionValues, a.action_type);
+        const cpa = parseFloat(costPerAction.find((c: any) => c.action_type === a.action_type)?.value ?? "0");
+        return {
+          id: a.action_type,
+          actionType: a.action_type,
+          count,
+          value,
+          costPerAction: cpa,
+          roas: cpa > 0 && value > 0 ? parseFloat((value / (cpa * count || 1)).toFixed(2)) : 0,
+        };
+      });
     }
 
     return new Response(
