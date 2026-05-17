@@ -1,11 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { z } from "npm:zod@3.22.4";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeadersFor, preflightResponse } from "../_shared/cors.ts";
 
 const META_API = "https://graph.facebook.com/v20.0";
 
@@ -57,7 +52,7 @@ function resolveAccountId(accountId: string): string {
   return `act_${stripped}`;
 }
 
-async function wrapMetaError(resp: Response, body: string): Promise<Response> {
+async function wrapMetaError(resp: Response, body: string, corsHeaders: Record<string, string>): Promise<Response> {
   let parsed: { error?: { code?: number; error_subcode?: number; message?: string; fbtrace_id?: string } } | null = null;
   try {
     parsed = JSON.parse(body);
@@ -86,9 +81,8 @@ async function wrapMetaError(resp: Response, body: string): Promise<Response> {
 }
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  if (req.method === "OPTIONS") return preflightResponse(req);
+  const corsHeaders = corsHeadersFor(req);
 
   try {
     const body = await req.json();
@@ -290,7 +284,7 @@ serve(async (req) => {
         { method: "POST", body: params, headers: { "Content-Type": "application/x-www-form-urlencoded" } },
       );
       const respBody = await resp.text();
-      if (!resp.ok) return wrapMetaError(resp, respBody);
+      if (!resp.ok) return wrapMetaError(resp, respBody, corsHeaders);
 
       const result = JSON.parse(respBody);
       console.log(`[meta-mutate] Created campaign ${result.id}`);
@@ -365,7 +359,7 @@ serve(async (req) => {
         { method: "POST", body: params, headers: { "Content-Type": "application/x-www-form-urlencoded" } },
       );
       const respBody = await resp.text();
-      if (!resp.ok) return wrapMetaError(resp, respBody);
+      if (!resp.ok) return wrapMetaError(resp, respBody, corsHeaders);
 
       const result = JSON.parse(respBody);
       console.log(`[meta-mutate] Created adset ${result.id}`);
@@ -414,7 +408,7 @@ serve(async (req) => {
         { method: "POST", body: params, headers: { "Content-Type": "application/x-www-form-urlencoded" } },
       );
       const respBody = await resp.text();
-      if (!resp.ok) return wrapMetaError(resp, respBody);
+      if (!resp.ok) return wrapMetaError(resp, respBody, corsHeaders);
 
       const result = JSON.parse(respBody);
       console.log(`[meta-mutate] Created ad ${result.id}`);
@@ -442,7 +436,7 @@ serve(async (req) => {
         { method: "POST", body: params, headers: { "Content-Type": "application/x-www-form-urlencoded" } },
       );
       const respBody = await resp.text();
-      if (!resp.ok) return wrapMetaError(resp, respBody);
+      if (!resp.ok) return wrapMetaError(resp, respBody, corsHeaders);
 
       console.log(`[meta-mutate] Updated schedule for adset ${adSetId}`);
       return new Response(
@@ -472,7 +466,7 @@ serve(async (req) => {
         { method: "POST", body: params, headers: { "Content-Type": "application/x-www-form-urlencoded" } },
       );
       const respBody = await resp.text();
-      if (!resp.ok) return wrapMetaError(resp, respBody);
+      if (!resp.ok) return wrapMetaError(resp, respBody, corsHeaders);
 
       const result = JSON.parse(respBody);
       const newCampaignId = result.copied_campaign_id || result.id;
@@ -502,7 +496,7 @@ serve(async (req) => {
         { method: "POST", body: params, headers: { "Content-Type": "application/x-www-form-urlencoded" } },
       );
       const respBody = await resp.text();
-      if (!resp.ok) return wrapMetaError(resp, respBody);
+      if (!resp.ok) return wrapMetaError(resp, respBody, corsHeaders);
 
       const result = JSON.parse(respBody);
       const newAdSetId = result.copied_adset_id || result.id;
@@ -537,7 +531,7 @@ serve(async (req) => {
         { method: "POST", body: params, headers: { "Content-Type": "application/x-www-form-urlencoded" } },
       );
       const respBody = await resp.text();
-      if (!resp.ok) return wrapMetaError(resp, respBody);
+      if (!resp.ok) return wrapMetaError(resp, respBody, corsHeaders);
 
       console.log(`[meta-mutate] updateTargeting adset ${adSetId}`);
       return new Response(
@@ -580,7 +574,7 @@ serve(async (req) => {
         { method: "POST", body: params, headers: { "Content-Type": "application/x-www-form-urlencoded" } },
       );
       const respBody = await resp.text();
-      if (!resp.ok) return wrapMetaError(resp, respBody);
+      if (!resp.ok) return wrapMetaError(resp, respBody, corsHeaders);
 
       console.log(`[meta-mutate] updateBidStrategy ${targetId} → ${bidStrategy}`);
       return new Response(
@@ -623,7 +617,7 @@ serve(async (req) => {
           { method: "POST", body: createParams, headers: { "Content-Type": "application/x-www-form-urlencoded" } },
         );
         const createBody = await createResp.text();
-        if (!createResp.ok) return wrapMetaError(createResp, createBody);
+        if (!createResp.ok) return wrapMetaError(createResp, createBody, corsHeaders);
         const createResult = JSON.parse(createBody);
         finalCreativeId = createResult.id;
       }
@@ -638,7 +632,7 @@ serve(async (req) => {
         { method: "POST", body: params, headers: { "Content-Type": "application/x-www-form-urlencoded" } },
       );
       const respBody = await resp.text();
-      if (!resp.ok) return wrapMetaError(resp, respBody);
+      if (!resp.ok) return wrapMetaError(resp, respBody, corsHeaders);
 
       console.log(`[meta-mutate] updateCreative ad ${adId} → creative ${finalCreativeId}`);
       return new Response(
@@ -682,7 +676,7 @@ serve(async (req) => {
         { method: "POST", body: params, headers: { "Content-Type": "application/x-www-form-urlencoded" } },
       );
       const respBody = await resp.text();
-      if (!resp.ok) return wrapMetaError(resp, respBody);
+      if (!resp.ok) return wrapMetaError(resp, respBody, corsHeaders);
 
       const result = JSON.parse(respBody);
       console.log(`[meta-mutate] createCustomAudience ${result.id}`);
@@ -731,7 +725,7 @@ serve(async (req) => {
         { method: "POST", body: params, headers: { "Content-Type": "application/x-www-form-urlencoded" } },
       );
       const respBody = await resp.text();
-      if (!resp.ok) return wrapMetaError(resp, respBody);
+      if (!resp.ok) return wrapMetaError(resp, respBody, corsHeaders);
 
       const result = JSON.parse(respBody);
       console.log(`[meta-mutate] createLookalikeAudience ${result.id}`);
@@ -821,7 +815,7 @@ serve(async (req) => {
         { method: "POST", body: params, headers: { "Content-Type": "application/x-www-form-urlencoded" } },
       );
       const respBody = await resp.text();
-      if (!resp.ok) return wrapMetaError(resp, respBody);
+      if (!resp.ok) return wrapMetaError(resp, respBody, corsHeaders);
 
       const result = JSON.parse(respBody);
       console.log(`[meta-mutate] createSplitTest ${result.id}`);
