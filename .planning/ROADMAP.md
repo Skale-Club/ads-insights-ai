@@ -29,10 +29,10 @@
 
 **Requirements**: M2-01, M2-04, M2-05
 **Depends on:** Phase 0
-**Plans:** 5/8 plans executed
+**Plans:** 6/8 plans executed
 
 Plans:
-- [ ] 01-01-PLAN.md — Extend meta-reports edge function with 5 new report types (audiences, placements, conversions, pixel-events, budgets-detail)
+- [x] 01-01-PLAN.md — Extend meta-reports edge function with 5 new report types (audiences, placements, conversions, pixel-events, budgets-detail)
 - [x] 01-02-PLAN.md — Meta Audiences page (4-tab breakdown: age/gender, region, device, publisher)
 - [x] 01-03-PLAN.md — Meta Placements page (grouped by publisher_platform)
 - [x] 01-04-PLAN.md — Meta Conversions page (funnel + per-campaign + pixel events)
@@ -71,6 +71,6 @@ Plans:
 |-------|-----------|----------------|--------|-----------|
 | 1-4 | v1.0 MVP | 4/4 | Complete | 2026-03-31 |
 | 5 | v1.1 | 1/1 | Complete | 2026-03-31 |
-| 1 | v1.2 | 5/8 | In Progress|  |
+| 1 | v1.2 | 6/8 | In Progress|  |
 | 2 | v1.2 | 0/0 | Not started | — |
 | 3 | v1.2 | 0/0 | Not started | — |
