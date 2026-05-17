@@ -24,7 +24,7 @@ Bun is also supported (`bun.lockb` present).
 - **Charts:** Recharts
 - **Backend:** Supabase (PostgreSQL, Auth, Edge Functions)
 - **Edge Functions:** Deno runtime (in `supabase/functions/`)
-- **External APIs:** Google Ads API v18, OpenAI Chat Completions (streaming)
+- **External APIs:** Google Ads API v18, Meta (Facebook) Graph API v20.0, OpenAI/Gemini Chat Completions (streaming)
 
 ## Path Alias
 
@@ -34,35 +34,57 @@ Bun is also supported (`bun.lockb` present).
 
 ### Frontend (src/)
 
-- `pages/` — Route-level components. Dashboard pages are nested under `pages/dashboard/`.
+- `pages/` — Route-level components. Dashboard pages are nested under `pages/dashboard/`. Google pages live directly under `pages/dashboard/`; Meta pages live under `pages/dashboard/meta/` (9 pages: Overview, Campaigns, AdSets, Ads, Audiences, Placements, Conversions, Reports, Budgets).
 - `components/ui/` — shadcn/ui primitives (do not edit directly; regenerate via shadcn CLI).
-- `components/dashboard/` — Dashboard-specific components (HeroMetrics, PerformanceChart, DataTable, etc.).
+- `components/dashboard/` — Dashboard-specific components (HeroMetrics, PerformanceChart, DataTable, ToolApprovalDialog, etc.).
 - `components/auth/ProtectedRoute.tsx` — Auth guard wrapper used in App.tsx routes.
 - `components/layout/` — DashboardLayout and TopBar.
 - `contexts/AuthContext.tsx` — Google OAuth flow via Supabase, stores provider token in sessionStorage.
-- `contexts/DashboardContext.tsx` — Selected Google Ads account, date range presets, previous period calculation.
+- `contexts/DashboardContext.tsx` — Selected account, platform (`google` | `meta`), date range presets, previous period calculation, Meta account list.
 - `integrations/supabase/client.ts` — Supabase client initialization with fallback mock client.
 - `types/database.ts` — Auto-generated Supabase database types. Use `Tables<T>`, `InsertTables<T>`, `UpdateTables<T>` helpers.
 - `lib/utils.ts` — `cn()` helper (clsx + tailwind-merge).
+- `hooks/use-chat-stream.ts` — Platform-aware AI chat hook; routes to `analyze-ads` with `platform` param; manages tool-call approval flow with platform snapshot to prevent cross-platform routing on approval.
 
 ### Supabase Edge Functions (supabase/functions/)
 
-- `google-ads-accounts/` — Fetches accessible Google Ads customer accounts using provider OAuth token. Requires `GOOGLE_ADS_DEVELOPER_TOKEN` env var.
-- `analyze-ads/` — Proxies OpenAI Chat Completions with streaming. Accepts user's OpenAI API key in request body.
+All functions have `verify_jwt = false` in `supabase/config.toml` and handle CORS internally.
 
-Both functions have `verify_jwt = false` in `supabase/config.toml` and handle CORS internally.
+**Google Ads:**
+- `google-ads-accounts/` — Fetches accessible Google Ads customer accounts using provider OAuth token. Requires `GOOGLE_ADS_DEVELOPER_TOKEN` env var.
+- `google-ads-reports/` — Fetches Google Ads report data (campaigns, adGroups, ads, keywords, searchTerms, audiences, budgets, conversions).
+- `google-ads-mutate/` — Campaign mutations for Google Ads (pause, bid adjustment, budget updates, etc.).
+- `google-ads-execute/` — Executes tool calls from the AI chat agentic loop against the Google Ads API.
+
+**Meta (Facebook) Ads:**
+- `meta-auth/` — Meta OAuth flow handler; exchanges code for long-lived token and stores in `meta_connections` table.
+- `meta-accounts/` — Fetches accessible Meta Ads accounts for the authenticated user.
+- `meta-reports/` — Fetches Meta Ads report data. Supports 11 report types: `overview`, `campaigns`, `adsets`, `ads`, `insights_by_placement`, `daily_performance`, `audiences`, `placements`, `conversions`, `pixel-events`, `budgets-detail`. Requires `META_APP_ID` + `META_APP_SECRET` env vars.
+- `meta-mutate/` — Full Meta campaign lifecycle mutations. Supports 17 actions: `pauseCampaign`, `enableCampaign`, `updateDailyBudget`, `updateLifetimeBudget`, `createCampaign`, `createAdSet`, `createAd`, `duplicateCampaign`, `duplicateAdSet`, `updateTargeting`, `updateBidStrategy`, `updateCreative`, `updateSchedule`, `createCustomAudience`, `createLookalikeAudience`, `batchPauseEnable`, `createSplitTest`.
+
+**AI / Shared:**
+- `analyze-ads/` — Platform-aware AI chat completions via Gemini with streaming and agentic tool loop. Routes to 7 Google tools or 18 Meta tools depending on `platform` param. Accepts user's API key in request body.
+- `get-platform-config/` — Returns platform-specific configuration for the client.
+- `get-meta-cli-session/` — Returns Meta CLI session for local development.
+- `get-cli-session/` — Returns Google CLI session for local development.
+- `healthcheck/` — Supabase keepalive edge function (multi-surface health ping).
+- `process-attachment/` — Processes file attachments for AI chat context.
 
 ### Database Tables (PostgreSQL via Supabase)
 
 - `profiles` — User profile (synced from auth)
-- `google_connections` — Encrypted OAuth tokens
+- `google_connections` — Encrypted Google OAuth tokens
 - `ads_accounts` — User's Google Ads accounts with `is_selected` flag
 - `reports_cache` — Cached report payloads (JSONB)
-- `user_ai_settings` — OpenAI API key and preferred model per user (RLS enforced)
+- `user_ai_settings` — OpenAI/Gemini API key and preferred model per user (RLS enforced)
+- `meta_connections` — Meta OAuth long-lived tokens with expiry; used by `meta-auth` and `meta-reports` for automatic token refresh
+- `meta_accounts` — User's Meta Ads accounts (act_XXXXXXXXX format)
 
 ### Auth Flow
 
-Google OAuth → Supabase Auth → provider token stored in sessionStorage → passed to edge functions for Google Ads API calls. Scope: `https://www.googleapis.com/auth/adwords`.
+**Google:** Google OAuth → Supabase Auth → provider token stored in sessionStorage → passed to edge functions for Google Ads API calls. Scope: `https://www.googleapis.com/auth/adwords`.
+
+**Meta:** Separate OAuth flow handled by the `meta-auth` edge function (not via Supabase Auth provider). The long-lived token is stored in the `meta_connections` table and auto-refreshed by `meta-reports` when near expiry. `DashboardContext` reads from `meta_accounts` to populate the account selector when `platform === 'meta'`.
 
 ## Testing
 
@@ -77,14 +99,14 @@ Strict mode is **off** in tsconfig.app.json (noImplicitAny, strictNullChecks dis
 
 **Ads Insights AI**
 
-A web application for managing and analyzing Google Ads campaigns with AI-powered insights. It enables users to connect their Google Ads accounts via OAuth, visualize performance metrics (impressions, clicks, CTR, CPC, conversions, cost), and receive intelligent recommendations powered by OpenAI/Gemini.
+A web application for managing and analyzing Google Ads and Meta (Facebook) Ads campaigns with AI-powered insights. It enables users to connect their ad accounts via OAuth, visualize performance metrics (impressions, clicks, CTR, CPC, conversions, cost, ROAS), and receive intelligent recommendations powered by Gemini.
 
-**Core Value:** Enable marketers to quickly understand their Google Ads performance and get AI-driven recommendations to optimize campaigns — without leaving the dashboard.
+**Core Value:** Enable marketers to quickly understand their Google and Meta Ads performance and get AI-driven recommendations to optimize campaigns — without leaving the dashboard.
 
 ### Constraints
 
 - **Tech Stack**: React 18, TypeScript, Supabase, Vite — constrained by existing codebase
-- **API**: Google Ads API v18/v20 required for data fetching
+- **API**: Google Ads API v18/v20 and Meta Graph API v20.0 required for data fetching
 - **AI**: Gemini API (or OpenAI-compatible) for insights
 <!-- GSD:project-end -->
 
@@ -319,14 +341,23 @@ A web application for managing and analyzing Google Ads campaigns with AI-powere
 ## Key Abstractions
 ### Edge Functions:
 - `google-ads-accounts`: Fetches accessible Google Ads customer accounts
-- `google-ads-reports`: Fetches various report types
-- `analyze-ads`: AI-powered analysis via Gemini
-- `google-ads-mutate`: Campaign mutations (pause, bid adjustment, etc.)
+- `google-ads-reports`: Fetches various Google Ads report types
+- `google-ads-mutate`: Campaign mutations for Google Ads (pause, bid, budget)
+- `google-ads-execute`: Executes AI tool calls against the Google Ads API
+- `meta-auth`: Meta OAuth handler; stores long-lived tokens in `meta_connections`
+- `meta-accounts`: Fetches Meta Ads accounts for the authenticated user
+- `meta-reports`: Fetches Meta Ads data (11 report types via Graph API v20.0)
+- `meta-mutate`: Full Meta campaign lifecycle (17 mutation actions)
+- `analyze-ads`: Platform-aware AI analysis via Gemini; 7 Google tools + 18 Meta tools
+- `get-platform-config`: Returns platform-specific client configuration
+- `healthcheck`: Multi-surface keepalive ping
 ### React Contexts:
 - `AuthContext`: Manages Supabase Auth + Google OAuth provider token
-- `DashboardContext`: Manages selected account, date range, accounts list, chat sidebar width
+- `DashboardContext`: Manages platform (`google` | `meta`), selected account, date range, accounts list, Meta accounts, chat sidebar width
 ### Custom Hooks:
 - `useGoogleAdsReport(reportType, options)`: Fetches and caches Google Ads reports via React Query
+- `useMetaReport(reportType, options)`: Fetches and caches Meta Ads reports via React Query
+- `use-chat-stream`: Platform-aware AI chat streaming with tool-call approval flow
 ## Entry Points
 ### Frontend Entry:
 - Location: `src/main.tsx`
