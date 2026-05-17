@@ -10,15 +10,21 @@ import { supabase, SUPABASE_URL } from '@/integrations/supabase/client';
 
 const META_REDIRECT_URI = `${SUPABASE_URL}/functions/v1/meta-auth`;
 
-function buildOAuthUrl(userId: string, metaAppId: string): string {
+function buildOAuthUrl(nonce: string, metaAppId: string): string {
   const params = new URLSearchParams({
     client_id: metaAppId,
     redirect_uri: META_REDIRECT_URI,
     scope: 'ads_read,ads_management,business_management',
-    state: userId,
+    state: nonce,
     response_type: 'code',
   });
   return `https://www.facebook.com/v20.0/dialog/oauth?${params.toString()}`;
+}
+
+function generateNonce(): string {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 export function MetaAdsSection() {
@@ -69,29 +75,26 @@ export function MetaAdsSection() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('meta_connected') !== 'true' || !user?.id) return;
-    // Remove the query param
     window.history.replaceState({}, '', window.location.pathname);
-    // Reload connection info
     supabase
       .from('meta_connections')
-      .select('meta_user_name, expires_at, access_token')
+      .select('meta_user_name, expires_at')
       .eq('user_id', user.id)
       .single()
       .then(({ data }) => {
         if (!data) return;
         setConnection({ meta_user_name: data.meta_user_name, expires_at: data.expires_at });
-        // Fetch and populate ad accounts
-        fetchAccounts(data.access_token);
+        fetchAccounts();
       });
   }, [user?.id]);
 
-  const fetchAccounts = async (accessToken: string) => {
+  const fetchAccounts = async () => {
     if (!user?.id) return;
     setLoadingAccounts(true);
     try {
-      const { data, error } = await supabase.functions.invoke('meta-accounts', {
-        body: { accessToken, userId: user.id },
-      });
+      // Edge function reads the access_token server-side from meta_connections —
+      // it never has to be pulled into the browser.
+      const { data, error } = await supabase.functions.invoke('meta-accounts', { body: {} });
       if (error || data?.error) throw new Error(data?.error ?? error?.message);
       const accounts = data.accounts ?? [];
       setMetaAccounts(accounts);
@@ -104,7 +107,7 @@ export function MetaAdsSection() {
     }
   };
 
-  const handleConnect = () => {
+  const handleConnect = async () => {
     if (!user?.id) return;
     if (!metaAppId) {
       toast({
@@ -114,7 +117,22 @@ export function MetaAdsSection() {
       });
       return;
     }
-    window.location.href = buildOAuthUrl(user.id, metaAppId);
+
+    const nonce = generateNonce();
+    const { error } = await supabase
+      .from('meta_oauth_states')
+      .insert({ user_id: user.id, nonce });
+
+    if (error) {
+      toast({
+        title: 'Could not start Meta connection',
+        description: error.message,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    window.location.href = buildOAuthUrl(nonce, metaAppId);
   };
 
   const handleDisconnect = async () => {
@@ -129,12 +147,7 @@ export function MetaAdsSection() {
 
   const handleRefreshAccounts = async () => {
     if (!user?.id) return;
-    const { data } = await supabase
-      .from('meta_connections')
-      .select('access_token')
-      .eq('user_id', user.id)
-      .single();
-    if (data?.access_token) fetchAccounts(data.access_token);
+    fetchAccounts();
   };
 
   const isConnected = !!connection;

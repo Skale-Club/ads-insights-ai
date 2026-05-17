@@ -6,7 +6,7 @@ const META_API = "https://graph.facebook.com/v20.0";
 serve(async (req) => {
   const url = new URL(req.url);
   const code = url.searchParams.get("code");
-  const state = url.searchParams.get("state"); // state = user_id
+  const state = url.searchParams.get("state"); // state = nonce (NOT user_id — see meta_oauth_states)
   const errorParam = url.searchParams.get("error");
   const errorDesc = url.searchParams.get("error_description");
 
@@ -35,6 +35,35 @@ serve(async (req) => {
     return redirectError("Server configuration error — missing Meta env vars");
   }
 
+  // Reject obviously malformed nonces fast (defense in depth before DB call).
+  if (!/^[0-9a-f]{64}$/.test(state)) {
+    return redirectError("Invalid OAuth state");
+  }
+
+  const supabase = createClient(supabaseUrl, serviceRoleKey);
+
+  // Consume the nonce atomically: mark it used only if it was unused and not expired.
+  // Returns the row so we know which user_id this OAuth flow belongs to.
+  const { data: stateRow, error: consumeError } = await supabase
+    .from("meta_oauth_states")
+    .update({ used_at: new Date().toISOString() })
+    .eq("nonce", state)
+    .is("used_at", null)
+    .gt("expires_at", new Date().toISOString())
+    .select("user_id")
+    .maybeSingle();
+
+  if (consumeError) {
+    console.error("[meta-auth] nonce consume db error");
+    return redirectError("Failed to validate OAuth state");
+  }
+
+  if (!stateRow) {
+    return redirectError("OAuth state expired, reused, or unknown");
+  }
+
+  const userId: string = stateRow.user_id;
+
   try {
     // Step 1: Exchange code for short-lived token
     const shortLivedResp = await fetch(
@@ -47,7 +76,7 @@ serve(async (req) => {
 
     if (!shortLivedResp.ok) {
       const err = await shortLivedResp.text();
-      console.error("[meta-auth] Short-lived token error:", err);
+      console.error("[meta-auth] Short-lived token error");
       return redirectError(`Meta OAuth error: ${err}`);
     }
 
@@ -65,7 +94,7 @@ serve(async (req) => {
 
     if (!longLivedResp.ok) {
       const err = await longLivedResp.text();
-      console.error("[meta-auth] Long-lived token error:", err);
+      console.error("[meta-auth] Long-lived token error");
       return redirectError(`Meta token exchange error: ${err}`);
     }
 
@@ -88,13 +117,12 @@ serve(async (req) => {
     const metaUserId: string = meData.id;
     const metaUserName: string = meData.name ?? "";
 
-    // Step 4: Upsert into meta_connections via service role
-    const supabase = createClient(supabaseUrl, serviceRoleKey);
+    // Step 4: Upsert into meta_connections using the validated user_id from the nonce row.
     const { error: upsertError } = await supabase
       .from("meta_connections")
       .upsert(
         {
-          user_id: state,
+          user_id: userId,
           access_token: accessToken,
           token_type: "long_lived",
           meta_user_id: metaUserId,
@@ -106,18 +134,18 @@ serve(async (req) => {
       );
 
     if (upsertError) {
-      console.error("[meta-auth] Supabase upsert error:", upsertError);
+      console.error("[meta-auth] Supabase upsert error:", upsertError.message);
       return redirectError(`Failed to save Meta connection: ${upsertError.message}`);
     }
 
-    console.log(`[meta-auth] Connected Meta user ${metaUserId} (${metaUserName}) for user ${state}`);
+    console.log(`[meta-auth] Connected Meta user ${metaUserId} for app user ${userId}`);
 
     return new Response(null, {
       status: 302,
       headers: { Location: `${siteUrl}/settings?meta_connected=true` },
     });
   } catch (err) {
-    console.error("[meta-auth] Unexpected error:", err);
+    console.error("[meta-auth] Unexpected error");
     return redirectError(err instanceof Error ? err.message : "Unknown error");
   }
 });

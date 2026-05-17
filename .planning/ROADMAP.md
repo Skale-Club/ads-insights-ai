@@ -69,6 +69,16 @@ Plans:
 - [x] 03-02-PLAN.md — Google ↔ Meta integration audit (8+ touchpoints) + fix concrete bugs found
 - [x] 03-03-PLAN.md — Build + test + tsc(node.json) verification; refresh CLAUDE.md with Meta surface
 
+### Phase 4: Security hardening - OAuth CSRF, URL cleanup, JWT, CORS, rate limit, RLS
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 3
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 4 to break down)
+
 ---
 
 ## Progress

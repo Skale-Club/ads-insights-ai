@@ -4,59 +4,70 @@ import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2 } from 'lucide-react';
 
+// Scrub OAuth-bearing fragments/queries from the URL so the access code or token
+// does not linger in browser history, referrer headers, or server access logs.
+function scrubOAuthArtifactsFromUrl() {
+  if (typeof window === 'undefined') return;
+  const clean = window.location.pathname;
+  window.history.replaceState({}, '', clean);
+}
+
 export default function AuthCallback() {
   const navigate = useNavigate();
   const [status, setStatus] = useState<string>('Processando autenticação...');
-  const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-  const [debugInfo, setDebugInfo] = useState<Record<string, string> | null>(null);
+  const isLocalhost =
+    typeof window !== 'undefined' &&
+    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+  const [debugInfo, setDebugInfo] = useState<{ hadHash: boolean; hadSearch: boolean } | null>(null);
 
   useEffect(() => {
     const handleAuthCallback = async () => {
-      // 1. Capture URL params for debug
+      const hadHash = window.location.hash.length > 0;
+      const hadSearch = window.location.search.length > 0;
+
       if (isLocalhost) {
-        const hash = window.location.hash;
-        const search = window.location.search;
-        setDebugInfo({ hash, search });
-        console.log('[AuthCallback] URL:', { hash, search });
+        // Localhost-only debug: log only presence flags, never raw token/code values.
+        setDebugInfo({ hadHash, hadSearch });
+        console.log('[AuthCallback] callback received', { hadHash, hadSearch });
       }
 
-      // 2. Check if we have a session
+      // Wait for Supabase to detect and consume the auth artifacts from the URL,
+      // then scrub the URL before doing anything else.
       const { data: { session }, error } = await supabase.auth.getSession();
+      scrubOAuthArtifactsFromUrl();
 
       if (error) {
-        console.error('[AuthCallback] Error getting session:', error);
+        console.error('[AuthCallback] Error getting session');
         setStatus(`Erro ao obter sessão: ${error.message}`);
         return;
       }
 
       if (session) {
-        console.log('[AuthCallback] Session found:', session.user.email);
+        console.log('[AuthCallback] Session established for', session.user.email);
         setStatus('Sessão encontrada! Redirecionando...');
-        
-        // Wait a moment to show success message before redirecting
         setTimeout(() => {
-          navigate('/dashboard');
+          navigate('/dashboard', { replace: true });
         }, 1500);
-      } else {
-         console.log('[AuthCallback] No session found immediately. Waiting for onAuthStateChange...');
-         // Listener for late auth state change
-         const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-            console.log('[AuthCallback] Auth State Change:', event);
-            if (event === 'SIGNED_IN' && session) {
-               setStatus('Login confirmado! Redirecionando...');
-               setTimeout(() => navigate('/dashboard'), 1500);
-            }
-         });
-         
-         // Timeout fallback
-         setTimeout(() => {
-            if (!session) {
-               setStatus('Nenhuma sessão detectada após aguardar. Verifique o console.');
-            }
-         }, 5000);
-
-         return () => subscription.unsubscribe();
+        return;
       }
+
+      console.log('[AuthCallback] No session yet, waiting for onAuthStateChange');
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+        if (event === 'SIGNED_IN' && session) {
+          scrubOAuthArtifactsFromUrl();
+          setStatus('Login confirmado! Redirecionando...');
+          setTimeout(() => navigate('/dashboard', { replace: true }), 1500);
+        }
+      });
+
+      const timeout = setTimeout(() => {
+        setStatus('Nenhuma sessão detectada após aguardar. Verifique o console.');
+      }, 5000);
+
+      return () => {
+        subscription.unsubscribe();
+        clearTimeout(timeout);
+      };
     };
 
     handleAuthCallback();
@@ -71,15 +82,17 @@ export default function AuthCallback() {
         <CardContent className="space-y-4">
           <div className="flex items-center space-x-2">
             <Loader2 className="h-4 w-4 animate-spin" />
-          <p>{status}</p>
+            <p>{status}</p>
           </div>
-          
+
           {isLocalhost && debugInfo && (
-          <div className="rounded-md bg-muted p-2 text-xs overflow-auto max-h-40">
-            <p className="font-bold">Info de Debug:</p>
-            <pre>{JSON.stringify(debugInfo, null, 2)}</pre>
-             <p className="mt-2 text-muted-foreground">Verifique o Console (F12) para logs detalhados.</p>
-          </div>
+            <div className="rounded-md bg-muted p-2 text-xs overflow-auto max-h-40">
+              <p className="font-bold">Info de Debug:</p>
+              <pre>{JSON.stringify(debugInfo, null, 2)}</pre>
+              <p className="mt-2 text-muted-foreground">
+                Tokens omitidos por segurança. Verifique o Console (F12) para logs detalhados.
+              </p>
+            </div>
           )}
         </CardContent>
       </Card>

@@ -26,6 +26,9 @@ export const supabase: SupabaseClient<Database> = isSupabaseConfigured
         storageKey: 'supabase.auth.token',
         autoRefreshToken: true,
         detectSessionInUrl: true,
+        // Lock in PKCE — never let a future SDK default flip us back to the
+        // implicit flow that exposes tokens in URL fragments.
+        flowType: 'pkce',
       },
     })
   : createMockClient();
