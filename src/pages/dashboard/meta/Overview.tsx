@@ -1,3 +1,5 @@
+import type { FC } from 'react';
+import type { LucideProps } from 'lucide-react';
 import { TrendingUp, Eye, MousePointer, DollarSign, Target, BarChart3, Users, Zap } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -46,7 +48,7 @@ function fmt(n: number, type: 'currency' | 'number' | 'percent' | 'roas' = 'numb
   return n.toLocaleString('en-US');
 }
 
-function KpiCard({ icon: Icon, label, value, sub }: { icon: any; label: string; value: string; sub?: string }) {
+function KpiCard({ icon: Icon, label, value, sub }: { icon: FC<LucideProps>; label: string; value: string; sub?: string }) {
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2">

@@ -58,7 +58,7 @@ function resolveAccountId(accountId: string): string {
 }
 
 async function wrapMetaError(resp: Response, body: string): Promise<Response> {
-  let parsed: any = null;
+  let parsed: { error?: { code?: number; error_subcode?: number; message?: string; fbtrace_id?: string } } | null = null;
   try {
     parsed = JSON.parse(body);
   } catch (_) {

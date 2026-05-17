@@ -110,3 +110,27 @@ TRIAGE — IN_SCOPE findings:
 
 IN_SCOPE COUNT: ~40 errors, ~4 warnings (warnings deferred — react-hooks pattern, pre-existing pattern)
 OUT_OF_SCOPE COUNT: ~80+ errors (process-attachment, google-ads-*, ui/*, settings/*, contexts/*, other pages)
+
+---
+
+AFTER: Post-fix lint run (2026-05-17)
+
+Files fixed:
+- src/pages/dashboard/meta/Overview.tsx: icon: any → FC<LucideProps>
+- src/pages/dashboard/meta/Reports.tsx: Record<string, any> → Record<string, unknown>; err: any → err (unknown)
+- src/hooks/use-chat-stream.ts: Record<string, any> × 2 → Record<string, unknown> (already committed by parallel agent)
+- supabase/functions/meta-mutate/index.ts: let parsed: any → typed interface
+- supabase/functions/meta-reports/index.ts: all any[] → MetaAction[]; all (c: any) → typed Record<string, unknown>; let → const destructuring
+- supabase/functions/analyze-ads/index.ts: parts: any[] → Array<Record<string, unknown>>; message processing callbacks typed
+
+Remaining IN_SCOPE items in the lint output:
+- src/pages/dashboard/meta/Budgets.tsx:119 — react-hooks/exhaustive-deps WARNING only (no error, deferred per plan)
+- src/pages/dashboard/meta/Placements.tsx:66 — react-hooks/exhaustive-deps WARNING only (no error, deferred per plan)
+- src/hooks/use-chat-stream.ts:383,578 — react-hooks/exhaustive-deps WARNINGS only (no error; pre-existing pattern across codebase)
+
+IN_SCOPE delta: 0 errors remaining in Meta surface (all ~40 errors eliminated)
+IN_SCOPE delta: 4 warnings remain (react-hooks/exhaustive-deps — warnings only, intentionally deferred per CLAUDE.md pre-existing pattern)
+
+Verification: npm run lint shows zero error lines referencing any files_modified path
+tsc --noEmit -p tsconfig.app.json: no NEW errors introduced (pre-existing errors in AlertSystem, DataTable, HeroMetrics, etc. unchanged)
+

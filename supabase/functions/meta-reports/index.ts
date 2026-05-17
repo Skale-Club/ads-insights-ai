@@ -23,17 +23,22 @@ function timeRange(startDate: string, endDate: string) {
   return encodeURIComponent(JSON.stringify({ since: startDate, until: endDate }));
 }
 
-function extractAction(actions: any[], type: string): number {
+interface MetaAction {
+  action_type: string;
+  value: string;
+}
+
+function extractAction(actions: MetaAction[], type: string): number {
   if (!Array.isArray(actions)) return 0;
-  return parseFloat(actions.find((a: any) => a.action_type === type)?.value ?? "0");
+  return parseFloat(actions.find((a) => a.action_type === type)?.value ?? "0");
 }
 
-function extractActionValue(action_values: any[], type: string): number {
+function extractActionValue(action_values: MetaAction[], type: string): number {
   if (!Array.isArray(action_values)) return 0;
-  return parseFloat(action_values.find((a: any) => a.action_type === type)?.value ?? "0");
+  return parseFloat(action_values.find((a) => a.action_type === type)?.value ?? "0");
 }
 
-function calcRoas(action_values: any[], spend: number): number {
+function calcRoas(action_values: MetaAction[], spend: number): number {
   if (!spend) return 0;
   const purchaseValue = extractActionValue(action_values, "offsite_conversion.fb_pixel_purchase")
     || extractActionValue(action_values, "purchase");
@@ -99,7 +104,7 @@ async function refreshTokenIfNeeded(userId: string, accessToken: string): Promis
   return newToken;
 }
 
-async function metaGet(url: string): Promise<any> {
+async function metaGet(url: string): Promise<Record<string, unknown>> {
   const resp = await fetch(url);
   if (!resp.ok) {
     const err = await resp.text();
@@ -125,7 +130,8 @@ serve(async (req) => {
       );
     }
 
-    let { accessToken, accountId, reportType, startDate, endDate, userId } = parseResult.data;
+    let accessToken = parseResult.data.accessToken;
+    const { accountId, reportType, startDate, endDate, userId } = parseResult.data;
 
     // Refresh token if close to expiry
     if (userId) {
@@ -167,23 +173,23 @@ serve(async (req) => {
       const json = await metaGet(
         `${META_API}/${accountId}/campaigns?fields=${encodeURIComponent(fields)}&limit=200&access_token=${token}`,
       );
-      data = (json.data ?? []).map((c: any) => {
-        const ins = c.insights?.data?.[0] ?? {};
-        const spend = parseFloat(ins.spend ?? "0");
-        const conversions = extractAction(ins.actions ?? [], "offsite_conversion.fb_pixel_purchase")
-          || extractAction(ins.actions ?? [], "purchase");
+      data = ((json.data ?? []) as Record<string, unknown>[]).map((c) => {
+        const ins = (c.insights as Record<string, unknown[]> | undefined)?.data?.[0] as Record<string, unknown> ?? {};
+        const spend = parseFloat(String(ins.spend ?? "0"));
+        const conversions = extractAction((ins.actions ?? []) as MetaAction[], "offsite_conversion.fb_pixel_purchase")
+          || extractAction((ins.actions ?? []) as MetaAction[], "purchase");
         return {
           id: c.id,
           name: c.name,
           status: c.status,
           objective: c.objective,
           budgetType: c.daily_budget ? "daily" : c.lifetime_budget ? "lifetime" : "unknown",
-          budget: parseFloat(c.daily_budget ?? c.lifetime_budget ?? "0") / 100,
+          budget: parseFloat(String(c.daily_budget ?? c.lifetime_budget ?? "0")) / 100,
           spend,
-          impressions: parseInt(ins.impressions ?? "0"),
-          clicks: parseInt(ins.clicks ?? "0"),
-          ctr: parseFloat(ins.ctr ?? "0"),
-          roas: calcRoas(ins.action_values ?? [], spend),
+          impressions: parseInt(String(ins.impressions ?? "0")),
+          clicks: parseInt(String(ins.clicks ?? "0")),
+          ctr: parseFloat(String(ins.ctr ?? "0")),
+          roas: calcRoas((ins.action_values ?? []) as MetaAction[], spend),
           results: conversions,
         };
       });
@@ -196,16 +202,18 @@ serve(async (req) => {
       const json = await metaGet(
         `${META_API}/${accountId}/adsets?fields=${encodeURIComponent(fields)}&limit=200&access_token=${token}`,
       );
-      data = (json.data ?? []).map((s: any) => {
-        const ins = s.insights?.data?.[0] ?? {};
-        const spend = parseFloat(ins.spend ?? "0");
-        const targeting = s.targeting ?? {};
+      data = ((json.data ?? []) as Record<string, unknown>[]).map((s) => {
+        const ins = (s.insights as Record<string, unknown[]> | undefined)?.data?.[0] as Record<string, unknown> ?? {};
+        const spend = parseFloat(String(ins.spend ?? "0"));
+        const targeting = (s.targeting ?? {}) as Record<string, unknown>;
         const ages = targeting.age_min && targeting.age_max
           ? `${targeting.age_min}–${targeting.age_max}`
           : null;
-        const geos = (targeting.geo_locations?.countries ?? []).slice(0, 2).join(", ");
-        const interests = (targeting.flexible_spec?.[0]?.interests ?? [])
-          .slice(0, 2).map((i: any) => i.name).join(", ");
+        const geoLocs = targeting.geo_locations as Record<string, string[]> | undefined;
+        const geos = (geoLocs?.countries ?? []).slice(0, 2).join(", ");
+        const flexSpec = targeting.flexible_spec as Array<Record<string, Array<{name: string}>>> | undefined;
+        const interests = (flexSpec?.[0]?.interests ?? [])
+          .slice(0, 2).map((i) => i.name).join(", ");
         const targetingSummary = [ages, geos, interests].filter(Boolean).join(" · ") || "Broad";
         return {
           id: s.id,
@@ -213,13 +221,13 @@ serve(async (req) => {
           campaignId: s.campaign_id,
           status: s.status,
           targetingSummary,
-          dailyBudget: parseFloat(s.daily_budget ?? "0") / 100,
+          dailyBudget: parseFloat(String(s.daily_budget ?? "0")) / 100,
           startTime: s.start_time,
           endTime: s.end_time,
           spend,
-          impressions: parseInt(ins.impressions ?? "0"),
-          ctr: parseFloat(ins.ctr ?? "0"),
-          roas: calcRoas(ins.action_values ?? [], spend),
+          impressions: parseInt(String(ins.impressions ?? "0")),
+          ctr: parseFloat(String(ins.ctr ?? "0")),
+          roas: calcRoas((ins.action_values ?? []) as MetaAction[], spend),
         };
       });
     }
@@ -231,22 +239,23 @@ serve(async (req) => {
       const json = await metaGet(
         `${META_API}/${accountId}/ads?fields=${encodeURIComponent(fields)}&limit=200&access_token=${token}`,
       );
-      data = (json.data ?? []).map((a: any) => {
-        const ins = a.insights?.data?.[0] ?? {};
-        const spend = parseFloat(ins.spend ?? "0");
+      data = ((json.data ?? []) as Record<string, unknown>[]).map((a) => {
+        const ins = (a.insights as Record<string, unknown[]> | undefined)?.data?.[0] as Record<string, unknown> ?? {};
+        const creative = (a.creative ?? {}) as Record<string, unknown>;
+        const spend = parseFloat(String(ins.spend ?? "0"));
         return {
           id: a.id,
           name: a.name,
           adsetId: a.adset_id,
           status: a.status,
-          title: a.creative?.title ?? "",
-          body: a.creative?.body ?? "",
-          imageUrl: a.creative?.image_url ?? a.creative?.thumbnail_url ?? null,
+          title: String(creative.title ?? ""),
+          body: String(creative.body ?? ""),
+          imageUrl: (creative.image_url ?? creative.thumbnail_url ?? null) as string | null,
           spend,
-          impressions: parseInt(ins.impressions ?? "0"),
-          ctr: parseFloat(ins.ctr ?? "0"),
-          cpc: parseFloat(ins.cpc ?? "0"),
-          roas: calcRoas(ins.action_values ?? [], spend),
+          impressions: parseInt(String(ins.impressions ?? "0")),
+          ctr: parseFloat(String(ins.ctr ?? "0")),
+          cpc: parseFloat(String(ins.cpc ?? "0")),
+          roas: calcRoas((ins.action_values ?? []) as MetaAction[], spend),
         };
       });
     }
@@ -256,13 +265,13 @@ serve(async (req) => {
       const json = await metaGet(
         `${META_API}/${accountId}/insights?fields=${fields}&breakdowns=publisher_platform,platform_position&time_range=${tr}&level=account&access_token=${token}`,
       );
-      data = (json.data ?? []).map((row: any) => ({
-        placement: placementLabel(row.publisher_platform ?? "", row.platform_position ?? ""),
-        impressions: parseInt(row.impressions ?? "0"),
-        clicks: parseInt(row.clicks ?? "0"),
-        spend: parseFloat(row.spend ?? "0"),
-        ctr: parseFloat(row.ctr ?? "0"),
-        cpc: parseFloat(row.cpc ?? "0"),
+      data = ((json.data ?? []) as Record<string, unknown>[]).map((row) => ({
+        placement: placementLabel(String(row.publisher_platform ?? ""), String(row.platform_position ?? "")),
+        impressions: parseInt(String(row.impressions ?? "0")),
+        clicks: parseInt(String(row.clicks ?? "0")),
+        spend: parseFloat(String(row.spend ?? "0")),
+        ctr: parseFloat(String(row.ctr ?? "0")),
+        cpc: parseFloat(String(row.cpc ?? "0")),
       }));
     }
 
@@ -271,13 +280,13 @@ serve(async (req) => {
       const json = await metaGet(
         `${META_API}/${accountId}/insights?fields=${fields}&time_range=${tr}&time_increment=1&level=account&access_token=${token}`,
       );
-      data = (json.data ?? []).map((row: any) => ({
+      data = ((json.data ?? []) as Record<string, unknown>[]).map((row) => ({
         date: row.date_start,
-        spend: parseFloat(row.spend ?? "0"),
-        impressions: parseInt(row.impressions ?? "0"),
-        clicks: parseInt(row.clicks ?? "0"),
-        conversions: extractAction(row.actions ?? [], "offsite_conversion.fb_pixel_purchase")
-          || extractAction(row.actions ?? [], "purchase"),
+        spend: parseFloat(String(row.spend ?? "0")),
+        impressions: parseInt(String(row.impressions ?? "0")),
+        clicks: parseInt(String(row.clicks ?? "0")),
+        conversions: extractAction((row.actions ?? []) as MetaAction[], "offsite_conversion.fb_pixel_purchase")
+          || extractAction((row.actions ?? []) as MetaAction[], "purchase"),
       }));
     }
 
@@ -295,28 +304,32 @@ serve(async (req) => {
         fetchBreakdown("device_platform"),
         fetchBreakdown("publisher_platform"),
       ]);
-      const mapRow = (label: string) => (row: any) => {
-        const spend = parseFloat(row.spend ?? "0");
-        const conv = extractAction(row.actions ?? [], "offsite_conversion.fb_pixel_purchase")
-          || extractAction(row.actions ?? [], "purchase");
+      const mapRow = (label: string) => (row: Record<string, unknown>) => {
+        const spend = parseFloat(String(row.spend ?? "0"));
+        const conv = extractAction((row.actions ?? []) as MetaAction[], "offsite_conversion.fb_pixel_purchase")
+          || extractAction((row.actions ?? []) as MetaAction[], "purchase");
         return {
           id: label,
           label,
-          impressions: parseInt(row.impressions ?? "0"),
-          clicks: parseInt(row.clicks ?? "0"),
+          impressions: parseInt(String(row.impressions ?? "0")),
+          clicks: parseInt(String(row.clicks ?? "0")),
           spend,
-          ctr: parseFloat(row.ctr ?? "0"),
-          cpc: parseFloat(row.cpc ?? "0"),
+          ctr: parseFloat(String(row.ctr ?? "0")),
+          cpc: parseFloat(String(row.cpc ?? "0")),
           conversions: conv,
           costPerConversion: conv > 0 ? parseFloat((spend / conv).toFixed(2)) : 0,
-          roas: calcRoas(row.action_values ?? [], spend),
+          roas: calcRoas((row.action_values ?? []) as MetaAction[], spend),
         };
       };
+      const typedAgeGender = (ageGender as Record<string, unknown>[]);
+      const typedRegion = (region as Record<string, unknown>[]);
+      const typedDevice = (device as Record<string, unknown>[]);
+      const typedPublisher = (publisher as Record<string, unknown>[]);
       data = {
-        ageGender: ageGender.map((r: any) => mapRow(`${r.age ?? ""} ${r.gender ?? ""}`.trim() || "Unknown")(r)),
-        region: region.map((r: any) => mapRow(r.region ?? "Unknown")(r)),
-        device: device.map((r: any) => mapRow(r.device_platform ?? "Unknown")(r)),
-        publisher: publisher.map((r: any) => mapRow(r.publisher_platform ?? "Unknown")(r)),
+        ageGender: typedAgeGender.map((r) => mapRow(`${String(r.age ?? "")} ${String(r.gender ?? "")}`.trim() || "Unknown")(r)),
+        region: typedRegion.map((r) => mapRow(String(r.region ?? "Unknown"))(r)),
+        device: typedDevice.map((r) => mapRow(String(r.device_platform ?? "Unknown"))(r)),
+        publisher: typedPublisher.map((r) => mapRow(String(r.publisher_platform ?? "Unknown"))(r)),
       };
     }
 
@@ -325,25 +338,25 @@ serve(async (req) => {
       const json = await metaGet(
         `${META_API}/${accountId}/insights?fields=${fields}&breakdowns=publisher_platform,platform_position,impression_device&time_range=${tr}&level=account&access_token=${token}`,
       );
-      data = (json.data ?? []).map((row: any, i: number) => {
-        const spend = parseFloat(row.spend ?? "0");
-        const conv = extractAction(row.actions ?? [], "offsite_conversion.fb_pixel_purchase")
-          || extractAction(row.actions ?? [], "purchase");
+      data = ((json.data ?? []) as Record<string, unknown>[]).map((row, i) => {
+        const spend = parseFloat(String(row.spend ?? "0"));
+        const conv = extractAction((row.actions ?? []) as MetaAction[], "offsite_conversion.fb_pixel_purchase")
+          || extractAction((row.actions ?? []) as MetaAction[], "purchase");
         return {
           id: `${row.publisher_platform}-${row.platform_position}-${row.impression_device}-${i}`,
-          publisherPlatform: row.publisher_platform ?? "unknown",
-          platformPosition: row.platform_position ?? "unknown",
-          impressionDevice: row.impression_device ?? "unknown",
-          placementLabel: placementLabel(row.publisher_platform ?? "", row.platform_position ?? ""),
-          impressions: parseInt(row.impressions ?? "0"),
-          clicks: parseInt(row.clicks ?? "0"),
+          publisherPlatform: String(row.publisher_platform ?? "unknown"),
+          platformPosition: String(row.platform_position ?? "unknown"),
+          impressionDevice: String(row.impression_device ?? "unknown"),
+          placementLabel: placementLabel(String(row.publisher_platform ?? ""), String(row.platform_position ?? "")),
+          impressions: parseInt(String(row.impressions ?? "0")),
+          clicks: parseInt(String(row.clicks ?? "0")),
           spend,
-          ctr: parseFloat(row.ctr ?? "0"),
-          cpc: parseFloat(row.cpc ?? "0"),
-          reach: parseInt(row.reach ?? "0"),
-          frequency: parseFloat(row.frequency ?? "0"),
+          ctr: parseFloat(String(row.ctr ?? "0")),
+          cpc: parseFloat(String(row.cpc ?? "0")),
+          reach: parseInt(String(row.reach ?? "0")),
+          frequency: parseFloat(String(row.frequency ?? "0")),
           conversions: conv,
-          roas: calcRoas(row.action_values ?? [], spend),
+          roas: calcRoas((row.action_values ?? []) as MetaAction[], spend),
         };
       });
     }
@@ -353,14 +366,14 @@ serve(async (req) => {
       const json = await metaGet(
         `${META_API}/${accountId}/insights?fields=${fields}&time_range=${tr}&level=account&access_token=${token}`,
       );
-      const row = json.data?.[0] ?? {};
-      const actions: any[] = row.actions ?? [];
-      const actionValues: any[] = row.action_values ?? [];
-      const costPerAction: any[] = row.cost_per_action_type ?? [];
-      data = actions.map((a: any) => {
+      const row = ((json.data ?? []) as Record<string, unknown>[])[0] ?? {};
+      const actions: MetaAction[] = (row.actions ?? []) as MetaAction[];
+      const actionValues: MetaAction[] = (row.action_values ?? []) as MetaAction[];
+      const costPerAction: MetaAction[] = (row.cost_per_action_type ?? []) as MetaAction[];
+      data = actions.map((a) => {
         const count = parseFloat(a.value ?? "0");
         const value = extractActionValue(actionValues, a.action_type);
-        const cpa = parseFloat(costPerAction.find((c: any) => c.action_type === a.action_type)?.value ?? "0");
+        const cpa = parseFloat(costPerAction.find((c) => c.action_type === a.action_type)?.value ?? "0");
         return {
           id: a.action_type,
           actionType: a.action_type,
@@ -377,24 +390,24 @@ serve(async (req) => {
       const json = await metaGet(
         `${META_API}/${accountId}/insights?fields=${fields}&time_range=${tr}&level=campaign&access_token=${token}`,
       );
-      const rows: any[] = json.data ?? [];
-      const perCampaign = rows.map((r: any) => {
-        const spend = parseFloat(r.spend ?? "0");
-        const purchases = extractAction(r.actions ?? [], "offsite_conversion.fb_pixel_purchase")
-          || extractAction(r.actions ?? [], "purchase");
-        const leads = extractAction(r.actions ?? [], "lead")
-          || extractAction(r.actions ?? [], "offsite_conversion.fb_pixel_lead");
-        const addToCart = extractAction(r.actions ?? [], "offsite_conversion.fb_pixel_add_to_cart")
-          || extractAction(r.actions ?? [], "add_to_cart");
-        const purchaseValue = extractActionValue(r.action_values ?? [], "offsite_conversion.fb_pixel_purchase")
-          || extractActionValue(r.action_values ?? [], "purchase");
+      const rows: Record<string, unknown>[] = (json.data ?? []) as Record<string, unknown>[];
+      const perCampaign = rows.map((r) => {
+        const spend = parseFloat(String(r.spend ?? "0"));
+        const purchases = extractAction((r.actions ?? []) as MetaAction[], "offsite_conversion.fb_pixel_purchase")
+          || extractAction((r.actions ?? []) as MetaAction[], "purchase");
+        const leads = extractAction((r.actions ?? []) as MetaAction[], "lead")
+          || extractAction((r.actions ?? []) as MetaAction[], "offsite_conversion.fb_pixel_lead");
+        const addToCart = extractAction((r.actions ?? []) as MetaAction[], "offsite_conversion.fb_pixel_add_to_cart")
+          || extractAction((r.actions ?? []) as MetaAction[], "add_to_cart");
+        const purchaseValue = extractActionValue((r.action_values ?? []) as MetaAction[], "offsite_conversion.fb_pixel_purchase")
+          || extractActionValue((r.action_values ?? []) as MetaAction[], "purchase");
         return {
           id: r.campaign_id,
           campaignId: r.campaign_id,
           campaignName: r.campaign_name ?? r.campaign_id,
           spend,
-          impressions: parseInt(r.impressions ?? "0"),
-          clicks: parseInt(r.clicks ?? "0"),
+          impressions: parseInt(String(r.impressions ?? "0")),
+          clicks: parseInt(String(r.clicks ?? "0")),
           purchases,
           leads,
           addToCart,
@@ -432,12 +445,13 @@ serve(async (req) => {
         metaGet(`${META_API}/${accountId}/campaigns?fields=${encodeURIComponent(campaignFields)}&limit=200&access_token=${token}`),
         metaGet(`${META_API}/${accountId}/adsets?fields=${encodeURIComponent(adsetFields)}&limit=200&access_token=${token}`),
       ]);
-      const mapBudget = (b: any, level: "campaign" | "adset") => {
-        const daily = parseFloat(b.daily_budget ?? "0") / 100;
-        const lifetime = parseFloat(b.lifetime_budget ?? "0") / 100;
-        const remaining = parseFloat(b.budget_remaining ?? "0") / 100;
+      const mapBudget = (b: Record<string, unknown>, level: "campaign" | "adset") => {
+        const daily = parseFloat(String(b.daily_budget ?? "0")) / 100;
+        const lifetime = parseFloat(String(b.lifetime_budget ?? "0")) / 100;
+        const remaining = parseFloat(String(b.budget_remaining ?? "0")) / 100;
         const amount = daily || lifetime;
-        const spent = parseFloat(b.insights?.data?.[0]?.spend ?? "0");
+        const insightsRow = ((b.insights as Record<string, unknown[]> | undefined)?.data?.[0]) as Record<string, unknown> | undefined;
+        const spent = parseFloat(String(insightsRow?.spend ?? "0"));
         const utilization = amount > 0 ? parseFloat(((spent / amount) * 100).toFixed(2)) : 0;
         return {
           id: b.id,
@@ -453,10 +467,10 @@ serve(async (req) => {
           bidStrategy: b.bid_strategy ?? null,
         };
       };
-      const campaigns = (campJson.data ?? []).map((c: any) => mapBudget(c, "campaign"))
-        .filter((c: any) => c.amount > 0);
-      const adsets = (asJson.data ?? []).map((s: any) => mapBudget(s, "adset"))
-        .filter((s: any) => s.amount > 0);
+      const campaigns = ((campJson.data ?? []) as Record<string, unknown>[]).map((c) => mapBudget(c, "campaign"))
+        .filter((c) => (c.amount as number) > 0);
+      const adsets = ((asJson.data ?? []) as Record<string, unknown>[]).map((s) => mapBudget(s, "adset"))
+        .filter((s) => (s.amount as number) > 0);
       data = { campaigns, adsets };
     }
 
@@ -464,11 +478,12 @@ serve(async (req) => {
       JSON.stringify({ data }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
-  } catch (err: any) {
+  } catch (err) {
     console.error("[meta-reports] Error:", err);
-    const status = err.status ?? 500;
+    const errObj = err as { status?: number; message?: string };
+    const status = errObj.status ?? 500;
     return new Response(
-      JSON.stringify({ error: err.message ?? "Unknown error" }),
+      JSON.stringify({ error: errObj.message ?? "Unknown error" }),
       { status, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }

@@ -48,7 +48,7 @@ function exportToXlsx(
   dateRange: { from: Date; to: Date },
 ): string {
   const mapped = rows.map((r) => {
-    const obj: Record<string, any> = {};
+    const obj: Record<string, unknown> = {};
     selectedFields.forEach((f) => {
       const def = AVAILABLE_FIELDS.find((x) => x.key === f);
       if (def) obj[def.label] = r[f];
@@ -104,8 +104,8 @@ export default function MetaReportsPage() {
         dateRange,
       );
       toast({ title: 'Report exported', description: filename });
-    } catch (err: any) {
-      toast({ title: 'Export failed', description: err.message, variant: 'destructive' });
+    } catch (err) {
+      toast({ title: 'Export failed', description: err instanceof Error ? err.message : 'Unknown error', variant: 'destructive' });
     }
   };
 

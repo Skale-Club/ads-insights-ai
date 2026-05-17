@@ -412,11 +412,11 @@ async function resolveQueryAdsData(
     if (!resp.ok) break;
 
     const data = await resp.json();
-    const parts: any[] = data?.candidates?.[0]?.content?.parts ?? [];
-    const queryCall = parts.find((p: any) => p.functionCall?.name === "queryAdsData");
+    const parts: Array<Record<string, unknown>> = data?.candidates?.[0]?.content?.parts ?? [];
+    const queryCall = parts.find((p) => (p.functionCall as Record<string, unknown> | undefined)?.name === "queryAdsData");
 
     if (!queryCall) {
-      const text = parts.filter((p: any) => p.text).map((p: any) => p.text).join("");
+      const text = parts.filter((p) => p.text).map((p) => String(p.text)).join("");
       return { contents, finalText: text || null };
     }
 
@@ -474,18 +474,19 @@ serve(async (req) => {
       : buildSystemPrompt(campaignData);
 
     const geminiModel = String(model || "gemini-2.5-flash").trim();
+    type MsgInput = { role: string; content: unknown; attachments?: Array<Record<string, unknown>> };
     const contents = Array.isArray(messages)
-      ? messages
-        .filter((m: any) =>
+      ? (messages as MsgInput[])
+        .filter((m) =>
           m &&
           (m.role === "user" || m.role === "assistant")
         )
-        .map((m: any) => {
+        .map((m) => {
           const role = m.role === "assistant" ? "model" : "user";
 
           // Handle multimodal content (images)
           if (m.attachments && Array.isArray(m.attachments) && m.attachments.length > 0) {
-            const parts: any[] = [];
+            const parts: Array<Record<string, unknown>> = [];
 
             // Add text content first
             if (typeof m.content === "string" && m.content.trim()) {
@@ -535,7 +536,7 @@ serve(async (req) => {
 
           return null;
         })
-        .filter((m: any) => m !== null)
+        .filter((m) => m !== null)
       : [];
 
     const url =
@@ -573,10 +574,10 @@ serve(async (req) => {
           });
           if (!resp.ok) break;
           const data = await resp.json();
-          const parts: any[] = data?.candidates?.[0]?.content?.parts ?? [];
-          const call = parts.find((p: any) => p.functionCall?.name === "queryMetaData");
+          const parts: Array<Record<string, unknown>> = data?.candidates?.[0]?.content?.parts ?? [];
+          const call = parts.find((p) => (p.functionCall as Record<string, unknown> | undefined)?.name === "queryMetaData");
           if (!call) {
-            const text = parts.filter((p: any) => p.text).map((p: any) => p.text).join("");
+            const text = parts.filter((p) => p.text).map((p) => String(p.text)).join("");
             return { contents, finalText: text || null };
           }
           const args = call.functionCall.args;
