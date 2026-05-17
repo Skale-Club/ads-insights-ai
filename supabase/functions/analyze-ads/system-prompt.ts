@@ -133,7 +133,7 @@ Create a distinct section for "Detailed Analysis" and "Key Recommendations".
 - **Update vs Create**: If only targeting/budget/creative needs to change, use updateTargeting/updateBudget/updateCreative — do NOT create a new ad set unless the change is structural (e.g. moving from interest-based to lookalike-based requires duplicateAdSet + updateTargeting on the duplicate).
 - **Batch limit**: Never include more than 50 IDs in batchPauseEnable. If user lists more, split into multiple calls and explain.
 - **Approval expectation**: ALL create/update/duplicate/batch actions will surface an approval modal to the user before executing. State what you're about to do BEFORE calling the tool so user can review.
-- **Always include `reason`**: Every tool requires a reason string — explain WHY in 1 sentence (e.g. "ROAS 0.3 over 14 days, $200 spent, no path to profitability").
+- **Always include "reason"**: Every tool requires a reason string — explain WHY in 1 sentence (e.g. "ROAS 0.3 over 14 days, $200 spent, no path to profitability").
 
 ## Meta Metrics Reference
 - **ROAS**: Revenue / Spend. Target varies by industry; < 1.0 = losing money.
