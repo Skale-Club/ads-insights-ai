@@ -21,6 +21,20 @@ const TOOL_RISK_LEVEL: Record<string, 'low' | 'medium' | 'high'> = {
   queryMetaData: 'low',
   analyzeCreative: 'low',
   updateBudget: 'medium',
+  // Meta — new (Phase 02)
+  createCampaign: 'high',
+  createAdSet: 'high',
+  createAd: 'high',
+  duplicateCampaign: 'medium',
+  duplicateAdSet: 'medium',
+  updateTargeting: 'medium',
+  updateBidStrategy: 'medium',
+  updateCreative: 'medium',
+  updateSchedule: 'medium',
+  createCustomAudience: 'high',
+  createLookalikeAudience: 'high',
+  batchPauseEnable: 'high',
+  createSplitTest: 'medium',
 };
 
 const TOOL_DESCRIPTION: Record<string, string> = {
@@ -36,6 +50,20 @@ const TOOL_DESCRIPTION: Record<string, string> = {
   queryMetaData: 'Retrieve additional Meta Ads data.',
   analyzeCreative: 'Analyse creative performance and suggest improvements.',
   updateBudget: 'Update the budget for a Meta ad set or campaign.',
+  // Meta — new (Phase 02)
+  createCampaign: 'Create a new Meta campaign (starts paused).',
+  createAdSet: 'Create a new ad set under a Meta campaign.',
+  createAd: 'Create a new ad under a Meta ad set (starts paused).',
+  duplicateCampaign: 'Duplicate a Meta campaign (optionally including all ad sets and ads).',
+  duplicateAdSet: 'Duplicate a Meta ad set, optionally to a different campaign.',
+  updateTargeting: 'Update targeting (geo / age / interests / audiences) on a Meta ad set.',
+  updateBidStrategy: 'Change Meta bid strategy on a campaign or ad set.',
+  updateCreative: 'Swap creative copy, CTA, link, or asset on a Meta ad.',
+  updateSchedule: 'Update Meta ad set start/end dates or dayparting.',
+  createCustomAudience: 'Create a Meta custom audience (requires Meta App Review).',
+  createLookalikeAudience: 'Create a Meta lookalike audience (requires Meta App Review).',
+  batchPauseEnable: 'Pause or enable up to 50 Meta entities in one batch.',
+  createSplitTest: 'Set up a Meta A/B split test (CREATIVE / AUDIENCE / PLACEMENT).',
 };
 
 interface UseChatStreamOptions {
