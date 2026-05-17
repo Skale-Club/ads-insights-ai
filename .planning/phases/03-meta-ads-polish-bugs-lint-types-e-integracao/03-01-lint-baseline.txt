@@ -1,0 +1,112 @@
+BEFORE: Total lint run — errors + warnings across entire codebase
+(captured 2026-05-17, prior to any 03-01 fixes)
+
+Total errors (full codebase): ~120+ errors
+Total warnings (full codebase): ~40+ warnings
+
+NEW_FILES: (in-scope — Phase 1 + Phase 2 new or modified Meta surface)
+- src/pages/dashboard/meta/Audiences.tsx
+- src/pages/dashboard/meta/Placements.tsx
+- src/pages/dashboard/meta/Conversions.tsx
+- src/pages/dashboard/meta/Reports.tsx
+- src/pages/dashboard/meta/Budgets.tsx
+- src/pages/dashboard/meta/Overview.tsx
+- src/pages/dashboard/meta/Campaigns.tsx
+- src/pages/dashboard/meta/AdSets.tsx
+- src/pages/dashboard/meta/Ads.tsx
+- src/components/dashboard/ToolApprovalDialog.tsx
+- supabase/functions/meta-reports/index.ts
+- supabase/functions/meta-mutate/index.ts
+- supabase/functions/analyze-ads/index.ts (Meta tool sections only)
+- src/hooks/use-chat-stream.ts (Meta routing lines 402-404 only, introduced by 02-03)
+
+OUT_OF_SCOPE: (do not touch)
+- supabase/functions/process-attachment/* (pre-existing fluff)
+- tailwind.config.ts (pre-existing fluff)
+- src/components/settings/AISettingsCard.tsx (pre-existing)
+- src/components/settings/DataSettingsCard.tsx (pre-existing)
+- src/contexts/DashboardContext.tsx (pre-existing)
+- src/contexts/AuthContext.tsx (pre-existing)
+- supabase/functions/google-ads-accounts/index.ts (pre-existing)
+- supabase/functions/google-ads-mutate/index.ts (pre-existing)
+- supabase/functions/google-ads-reports/index.ts (pre-existing)
+- src/hooks/useGoogleAdsReport.ts (pre-existing)
+- src/pages/dashboard/*.tsx (non-meta Google pages, pre-existing)
+- src/pages/dashboard/Recommendations.tsx (pre-existing)
+- src/components/ui/* (shadcn generated, pre-existing)
+- src/hooks/useMetaReport.ts (pre-existing, not in files_modified)
+- All other files not in NEW_FILES list
+
+TRIAGE — IN_SCOPE findings:
+
+[IN_SCOPE] src/pages/dashboard/meta/Overview.tsx
+  49:61  error  Unexpected any. (icon: any in KpiCard props)
+
+[IN_SCOPE] src/pages/dashboard/meta/Reports.tsx
+  51:31  error  Unexpected any. (Record<string, any> in exportToXlsx)
+  107:19 error  Unexpected any. (err: any in catch block)
+
+[IN_SCOPE] src/pages/dashboard/meta/Budgets.tsx
+  119:9  warning  react-hooks/exhaustive-deps (pre-existing pattern, warnings only — not errors, deferred)
+
+[IN_SCOPE] src/pages/dashboard/meta/Placements.tsx
+  66:9   warning  react-hooks/exhaustive-deps (warnings only — deferred)
+
+[IN_SCOPE] src/hooks/use-chat-stream.ts (NEW Meta lines 402-404)
+  402:58  error  Unexpected any. (Record<string, any> — Meta tool input type)
+  404:34  error  Unexpected any. (Record<string, any> — Meta tool body type)
+
+[IN_SCOPE] supabase/functions/meta-mutate/index.ts
+  61:15  error  Unexpected any. (let parsed: any in wrapMetaError)
+
+[IN_SCOPE] supabase/functions/meta-reports/index.ts
+  26:33  error  Unexpected any. (extractAction params)
+  28:38  error  Unexpected any.
+  31:44  error  Unexpected any. (extractActionValue params)
+  33:44  error  Unexpected any.
+  36:34  error  Unexpected any. (calcRoas param)
+  102:46 error  Unexpected any. (metaGet return type)
+  128:24 error  prefer-const (let accountId)
+  128:35 error  prefer-const (let reportType)
+  128:47 error  prefer-const (let startDate)
+  128:58 error  prefer-const (let endDate)
+  128:67 error  prefer-const (let userId)
+  170:40 error  Unexpected any.
+  199:40 error  Unexpected any.
+  208:32 error  Unexpected any.
+  234:40 error  Unexpected any.
+  259:42 error  Unexpected any.
+  274:42 error  Unexpected any.
+  298:47 error  Unexpected any.
+  316:38 error  Unexpected any.
+  317:32 error  Unexpected any.
+  318:32 error  Unexpected any.
+  319:38 error  Unexpected any.
+  328:42 error  Unexpected any.
+  357:22 error  Unexpected any.
+  358:27 error  Unexpected any.
+  359:28 error  Unexpected any.
+
+[IN_SCOPE] supabase/functions/analyze-ads/index.ts (Meta tool sections)
+  415:18  error  Unexpected any. (parts: any[])
+  416:38  error  Unexpected any. (p: any)
+  419:37  error  Unexpected any.
+  419:61  error  Unexpected any.
+  479:21  error  Unexpected any.
+  483:18  error  Unexpected any.
+  488:26  error  Unexpected any.
+  538:21  error  Unexpected any.
+  576:24  error  Unexpected any. (Meta resolveMetaTool sections)
+  577:39  error  Unexpected any.
+  579:43  error  Unexpected any.
+  579:67  error  Unexpected any.
+
+[OUT_OF_SCOPE] ToolApprovalDialog.tsx — zero errors (clean already)
+[OUT_OF_SCOPE] meta/Campaigns.tsx — zero errors
+[OUT_OF_SCOPE] meta/AdSets.tsx — zero errors
+[OUT_OF_SCOPE] meta/Ads.tsx — zero errors
+[OUT_OF_SCOPE] meta/Audiences.tsx — zero errors
+[OUT_OF_SCOPE] meta/Conversions.tsx — zero errors
+
+IN_SCOPE COUNT: ~40 errors, ~4 warnings (warnings deferred — react-hooks pattern, pre-existing pattern)
+OUT_OF_SCOPE COUNT: ~80+ errors (process-attachment, google-ads-*, ui/*, settings/*, contexts/*, other pages)
