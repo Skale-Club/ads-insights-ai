@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Meta Ads Full Parity
 status: unknown
-last_updated: "2026-05-17T14:00:34.144Z"
+last_updated: "2026-05-17T14:07:36.119Z"
 progress:
   total_phases: 3
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 16
-  completed_plans: 11
+  completed_plans: 12
 ---
 
 # State: Ads Insights AI

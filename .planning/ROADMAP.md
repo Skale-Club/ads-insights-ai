@@ -47,14 +47,14 @@ Plans:
 
 **Requirements**: M2-02, M2-04, M2-05
 **Depends on:** Phase 1
-**Plans:** 4/5 plans executed
+**Plans:** 5/5 plans complete
 
 Plans:
 - [x] 02-01-PLAN.md — Extend meta-mutate edge function with 13 new action handlers (createCampaign/AdSet/Ad, duplicate*, update*, createCustomAudience/Lookalike, batchPauseEnable, createSplitTest)
 - [x] 02-02-PLAN.md — Add 13 new tool definitions to metaToolDefinitions + expand buildMetaSystemPrompt with usage guidance
 - [x] 02-03-PLAN.md — Extend use-chat-stream.ts with tool-call routing for 13 new Meta tools (approval flow intact)
 - [x] 02-04-PLAN.md — Extend ToolApprovalDialog copy + Meta App Review banner for audience-gated tools
-- [ ] 02-05-PLAN.md — Static checks (tsc/eslint) + write 02-VERIFICATION.md with App Review checklist
+- [x] 02-05-PLAN.md — Static checks (tsc/eslint) + write 02-VERIFICATION.md with App Review checklist
 
 ### Phase 3: Meta Ads polish - bugs lint types e integracao
 
@@ -78,5 +78,5 @@ Plans:
 | 1-4 | v1.0 MVP | 4/4 | Complete | 2026-03-31 |
 | 5 | v1.1 | 1/1 | Complete | 2026-03-31 |
 | 1 | v1.2 | 7/8 | In Progress|  |
-| 2 | v1.2 | 4/5 | In Progress|  |
+| 2 | v1.2 | 5/5 | Complete   | 2026-05-17 |
 | 3 | v1.2 | 0/3 | Not started | — |
