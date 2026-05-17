@@ -47,13 +47,13 @@ Plans:
 
 **Requirements**: M2-02, M2-04, M2-05
 **Depends on:** Phase 1
-**Plans:** 3/5 plans executed
+**Plans:** 5 plans
 
 Plans:
-- [x] 02-01-PLAN.md — Extend meta-mutate edge function with 13 new action handlers (createCampaign/AdSet/Ad, duplicate*, update*, createCustomAudience/Lookalike, batchPauseEnable, createSplitTest)
-- [x] 02-02-PLAN.md — Add 13 new tool definitions to metaToolDefinitions + expand buildMetaSystemPrompt with usage guidance
+- [ ] 02-01-PLAN.md — Extend meta-mutate edge function with 13 new action handlers (createCampaign/AdSet/Ad, duplicate*, update*, createCustomAudience/Lookalike, batchPauseEnable, createSplitTest)
+- [ ] 02-02-PLAN.md — Add 13 new tool definitions to metaToolDefinitions + expand buildMetaSystemPrompt with usage guidance
 - [ ] 02-03-PLAN.md — Extend use-chat-stream.ts with tool-call routing for 13 new Meta tools (approval flow intact)
-- [x] 02-04-PLAN.md — Extend ToolApprovalDialog copy + Meta App Review banner for audience-gated tools
+- [ ] 02-04-PLAN.md — Extend ToolApprovalDialog copy + Meta App Review banner for audience-gated tools
 - [ ] 02-05-PLAN.md — Static checks (tsc/eslint) + write 02-VERIFICATION.md with App Review checklist
 
 ### Phase 3: Meta Ads polish - bugs lint types e integracao
@@ -62,10 +62,12 @@ Plans:
 
 **Requirements**: M2-03, M2-04, M2-05
 **Depends on:** Phase 2
-**Plans:** 0 plans
+**Plans:** 3 plans
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 3 to break down)
+- [ ] 03-01-PLAN.md — Fix lint + type errors in NEW Meta code only (5 pages + meta-reports/meta-mutate/analyze-ads + ToolApprovalDialog); baseline diff captured
+- [ ] 03-02-PLAN.md — Google ↔ Meta integration audit (8+ touchpoints) + fix concrete bugs found
+- [ ] 03-03-PLAN.md — Build + test + tsc(node.json) verification; refresh CLAUDE.md with Meta surface
 
 ---
 
@@ -77,4 +79,4 @@ Plans:
 | 5 | v1.1 | 1/1 | Complete | 2026-03-31 |
 | 1 | v1.2 | 7/8 | In Progress|  |
 | 2 | v1.2 | 3/5 | In Progress|  |
-| 3 | v1.2 | 0/0 | Not started | — |
+| 3 | v1.2 | 0/3 | Not started | — |
