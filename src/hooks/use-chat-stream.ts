@@ -401,8 +401,16 @@ export function useChatStream({
       const toolName = pending.part.toolName;
       const input = pending.part.input as Record<string, any>;
       let action: string;
-      let body: Record<string, any> = { accessToken: metaAccessToken };
+      const body: Record<string, any> = { accessToken: metaAccessToken, accountId: metaAccountId };
 
+      // Read-only tools — no mutation, skip meta-mutate
+      if (toolName === 'analyzeCreative' || toolName === 'queryMetaData') {
+        addDataPart({ type: 'status', label: `${toolName}: read-only, no action needed`, level: 'info' });
+        pendingToolCallRef.current = null;
+        return;
+      }
+
+      // Status toggles (existing)
       if (toolName === 'pauseCampaign') {
         action = 'pauseCampaign';
         body.campaignId = input.campaignId;
@@ -410,13 +418,104 @@ export function useChatStream({
         action = 'enableCampaign';
         body.campaignId = input.campaignId;
       } else if (toolName === 'updateBudget') {
-        action = input.budgetType === 'lifetime' ? 'updateLifetimeBudget' : 'updateDailyBudget';
+        action = input.budgetType === 'lifetime' || input.targetType === 'campaign_lifetime' ? 'updateLifetimeBudget' : 'updateDailyBudget';
+        body.adSetId = input.adSetId || (input.targetType === 'adset_daily' ? input.targetId : undefined);
+        body.campaignId = input.campaignId || (input.targetType === 'campaign_lifetime' ? input.targetId : undefined);
+        body.amountCents = input.amountCents ?? input.newAmountCents;
+      }
+      // Lifecycle creation
+      else if (toolName === 'createCampaign') {
+        action = 'createCampaign';
+        body.name = input.name;
+        body.objective = input.objective;
+        body.dailyBudgetCents = input.dailyBudgetCents;
+        body.lifetimeBudgetCents = input.lifetimeBudgetCents;
+        body.bidStrategy = input.bidStrategy;
+        body.status = 'PAUSED';
+      } else if (toolName === 'createAdSet') {
+        action = 'createAdSet';
+        body.campaignId = input.campaignId;
+        body.name = input.name;
+        body.optimizationGoal = input.optimizationGoal;
+        body.billingEvent = input.billingEvent ?? 'IMPRESSIONS';
+        body.dailyBudgetCents = input.dailyBudgetCents;
+        body.lifetimeBudgetCents = input.lifetimeBudgetCents;
+        body.targeting = input.targeting;
+        body.startTime = input.startTime;
+        body.endTime = input.endTime;
+      } else if (toolName === 'createAd') {
+        action = 'createAd';
+        body.adSetId = input.adSetId;
+        body.name = input.name;
+        body.creative = input.creative;
+        body.status = 'PAUSED';
+      }
+      // Duplicate
+      else if (toolName === 'duplicateCampaign') {
+        action = 'duplicateCampaign';
+        body.campaignId = input.campaignId;
+        body.deep = input.deep === true;
+      } else if (toolName === 'duplicateAdSet') {
+        action = 'duplicateAdSet';
         body.adSetId = input.adSetId;
         body.campaignId = input.campaignId;
-        body.amountCents = input.amountCents;
-      } else {
-        // analyzeCreative and other read-only tools — no mutation needed
-        addDataPart({ type: 'status', label: `${toolName}: read-only, no action needed`, level: 'info' });
+      }
+      // Targeting & schedule
+      else if (toolName === 'updateTargeting') {
+        action = 'updateTargeting';
+        body.adSetId = input.adSetId;
+        body.targeting = input.targeting;
+      } else if (toolName === 'updateSchedule') {
+        action = 'updateSchedule';
+        body.adSetId = input.adSetId;
+        body.startTime = input.startTime;
+        body.endTime = input.endTime;
+        body.adsetSchedule = input.adsetSchedule;
+      }
+      // Bid strategy
+      else if (toolName === 'updateBidStrategy') {
+        action = 'updateBidStrategy';
+        body.campaignId = input.campaignId;
+        body.adSetId = input.adSetId;
+        body.bidStrategy = input.bidStrategy;
+        body.bidAmountCents = input.bidAmountCents;
+      }
+      // Creative
+      else if (toolName === 'updateCreative') {
+        action = 'updateCreative';
+        body.adId = input.adId;
+        body.creativeId = input.creativeId;
+        body.creative = input.creative;
+      }
+      // Audiences (App Review-gated)
+      else if (toolName === 'createCustomAudience') {
+        action = 'createCustomAudience';
+        body.name = input.name;
+        body.audienceSourceType = input.audienceSourceType;
+        body.audienceRules = input.audienceRules;
+      } else if (toolName === 'createLookalikeAudience') {
+        action = 'createLookalikeAudience';
+        body.name = input.name;
+        body.sourceAudienceId = input.sourceAudienceId;
+        body.lookalikeSpec = input.lookalikeSpec;
+      }
+      // Batch
+      else if (toolName === 'batchPauseEnable') {
+        action = 'batchPauseEnable';
+        body.entityIds = input.entityIds;
+        body.entityType = input.entityType;
+        body.status = input.status;
+      }
+      // Split test
+      else if (toolName === 'createSplitTest') {
+        action = 'createSplitTest';
+        body.splitTestName = input.splitTestName;
+        body.splitTestType = input.splitTestType;
+        body.splitTestCells = input.splitTestCells;
+      }
+      // Unknown — surface to chat instead of silently dropping
+      else {
+        addDataPart({ type: 'status', label: `Unknown Meta tool: ${toolName}`, level: 'warning' });
         pendingToolCallRef.current = null;
         return;
       }
