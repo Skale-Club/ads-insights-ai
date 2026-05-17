@@ -5,11 +5,13 @@
   "commit_docs": true,
   "model_profile": "balanced",
   "workflow": {
-    "research": true,
-    "plan_check": true,
+    "research": false,
+    "plan_check": false,
     "verifier": true,
-    "nyquist_validation": true,
-    "auto_advance": false
+    "nyquist_validation": false,
+    "auto_advance": false,
+    "skip_discuss": true,
+    "ui_phase": false
   },
   "planning": {
     "sub_repos": []

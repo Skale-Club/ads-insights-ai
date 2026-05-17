@@ -45,3 +45,13 @@ See: .planning/PROJECT.md (v1.1 shipped)
 ## Next Steps
 
 Run `/gsd-new-milestone` to start planning the next milestone (questioning → research → requirements → roadmap)
+
+---
+
+## Accumulated Context
+
+### Roadmap Evolution
+
+- Phase 1 added: Meta Ads chat tools - paridade total de manipulacao (expandir tools do chat Meta para paridade Google + criar campanha/adset/ad, targeting, audiences, lookalikes, duplicar, bid strategy, batch ops, creative edit, scheduling, A/B testing)
+- Phase 2 added: Meta Ads paineis completos - paridade visual com Google (novas paginas dashboard Meta: Audiences/Demographics, Placements, Conversions/Pixel, Reports/Insights export, Budgets equivalente)
+- Phase 3 added: Meta Ads polish - bugs lint types e integracao (varredura sistematica: lint, type errors, dead code, broken integration points entre Google e Meta, performance, console errors)
