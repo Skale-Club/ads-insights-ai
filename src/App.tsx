@@ -38,6 +38,11 @@ import MetaOverviewPage from "@/pages/dashboard/meta/Overview";
 import MetaCampaignsPage from "@/pages/dashboard/meta/Campaigns";
 import MetaAdSetsPage from "@/pages/dashboard/meta/AdSets";
 import MetaAdsPage from "@/pages/dashboard/meta/Ads";
+import MetaAudiencesPage from "@/pages/dashboard/meta/Audiences";
+import MetaPlacementsPage from "@/pages/dashboard/meta/Placements";
+import MetaConversionsPage from "@/pages/dashboard/meta/Conversions";
+import MetaReportsPage from "@/pages/dashboard/meta/Reports";
+import MetaBudgetsPage from "@/pages/dashboard/meta/Budgets";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -100,6 +105,11 @@ const App = () => (
                     <Route path="meta/campaigns" element={<MetaCampaignsPage />} />
                     <Route path="meta/adsets" element={<MetaAdSetsPage />} />
                     <Route path="meta/ads" element={<MetaAdsPage />} />
+                    <Route path="meta/audiences" element={<MetaAudiencesPage />} />
+                    <Route path="meta/placements" element={<MetaPlacementsPage />} />
+                    <Route path="meta/conversions" element={<MetaConversionsPage />} />
+                    <Route path="meta/reports" element={<MetaReportsPage />} />
+                    <Route path="meta/budgets" element={<MetaBudgetsPage />} />
                   </Route>
 
                   {/* Settings */}
