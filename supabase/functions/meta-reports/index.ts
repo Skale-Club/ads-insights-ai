@@ -372,6 +372,94 @@ serve(async (req) => {
       });
     }
 
+    else if (reportType === "conversions") {
+      const fields = "campaign_id,campaign_name,spend,impressions,clicks,actions,action_values,cost_per_action_type";
+      const json = await metaGet(
+        `${META_API}/${accountId}/insights?fields=${fields}&time_range=${tr}&level=campaign&access_token=${token}`,
+      );
+      const rows: any[] = json.data ?? [];
+      const perCampaign = rows.map((r: any) => {
+        const spend = parseFloat(r.spend ?? "0");
+        const purchases = extractAction(r.actions ?? [], "offsite_conversion.fb_pixel_purchase")
+          || extractAction(r.actions ?? [], "purchase");
+        const leads = extractAction(r.actions ?? [], "lead")
+          || extractAction(r.actions ?? [], "offsite_conversion.fb_pixel_lead");
+        const addToCart = extractAction(r.actions ?? [], "offsite_conversion.fb_pixel_add_to_cart")
+          || extractAction(r.actions ?? [], "add_to_cart");
+        const purchaseValue = extractActionValue(r.action_values ?? [], "offsite_conversion.fb_pixel_purchase")
+          || extractActionValue(r.action_values ?? [], "purchase");
+        return {
+          id: r.campaign_id,
+          campaignId: r.campaign_id,
+          campaignName: r.campaign_name ?? r.campaign_id,
+          spend,
+          impressions: parseInt(r.impressions ?? "0"),
+          clicks: parseInt(r.clicks ?? "0"),
+          purchases,
+          leads,
+          addToCart,
+          purchaseValue,
+          costPerPurchase: purchases > 0 ? parseFloat((spend / purchases).toFixed(2)) : 0,
+          roas: spend > 0 && purchaseValue > 0 ? parseFloat((purchaseValue / spend).toFixed(2)) : 0,
+        };
+      });
+      const totals = perCampaign.reduce((acc, r) => ({
+        spend: acc.spend + r.spend,
+        impressions: acc.impressions + r.impressions,
+        clicks: acc.clicks + r.clicks,
+        addToCart: acc.addToCart + r.addToCart,
+        purchases: acc.purchases + r.purchases,
+        leads: acc.leads + r.leads,
+        purchaseValue: acc.purchaseValue + r.purchaseValue,
+      }), { spend: 0, impressions: 0, clicks: 0, addToCart: 0, purchases: 0, leads: 0, purchaseValue: 0 });
+      data = {
+        perCampaign,
+        totals: {
+          ...totals,
+          costPerPurchase: totals.purchases > 0 ? parseFloat((totals.spend / totals.purchases).toFixed(2)) : 0,
+          conversionRate: totals.clicks > 0 ? parseFloat(((totals.purchases / totals.clicks) * 100).toFixed(2)) : 0,
+          roas: totals.spend > 0 ? parseFloat((totals.purchaseValue / totals.spend).toFixed(2)) : 0,
+        },
+      };
+    }
+
+    else if (reportType === "budgets-detail") {
+      const campaignFields = "id,name,status,daily_budget,lifetime_budget,budget_remaining,bid_strategy" +
+        `,insights.fields(spend){time_range:${JSON.stringify({ since: startDate, until: endDate })}}`;
+      const adsetFields = "id,name,campaign_id,status,daily_budget,lifetime_budget,budget_remaining,bid_strategy" +
+        `,insights.fields(spend){time_range:${JSON.stringify({ since: startDate, until: endDate })}}`;
+      const [campJson, asJson] = await Promise.all([
+        metaGet(`${META_API}/${accountId}/campaigns?fields=${encodeURIComponent(campaignFields)}&limit=200&access_token=${token}`),
+        metaGet(`${META_API}/${accountId}/adsets?fields=${encodeURIComponent(adsetFields)}&limit=200&access_token=${token}`),
+      ]);
+      const mapBudget = (b: any, level: "campaign" | "adset") => {
+        const daily = parseFloat(b.daily_budget ?? "0") / 100;
+        const lifetime = parseFloat(b.lifetime_budget ?? "0") / 100;
+        const remaining = parseFloat(b.budget_remaining ?? "0") / 100;
+        const amount = daily || lifetime;
+        const spent = parseFloat(b.insights?.data?.[0]?.spend ?? "0");
+        const utilization = amount > 0 ? parseFloat(((spent / amount) * 100).toFixed(2)) : 0;
+        return {
+          id: b.id,
+          level,
+          name: b.name,
+          campaignId: b.campaign_id ?? b.id,
+          status: b.status,
+          budgetType: daily ? "daily" : lifetime ? "lifetime" : "none",
+          amount,
+          spent,
+          remaining,
+          utilization,
+          bidStrategy: b.bid_strategy ?? null,
+        };
+      };
+      const campaigns = (campJson.data ?? []).map((c: any) => mapBudget(c, "campaign"))
+        .filter((c: any) => c.amount > 0);
+      const adsets = (asJson.data ?? []).map((s: any) => mapBudget(s, "adset"))
+        .filter((s: any) => s.amount > 0);
+      data = { campaigns, adsets };
+    }
+
     return new Response(
       JSON.stringify({ data }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
