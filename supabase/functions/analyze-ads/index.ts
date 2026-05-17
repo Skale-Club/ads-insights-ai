@@ -74,6 +74,195 @@ const metaToolDefinitions = [
       required: ["objective"],
     },
   },
+  {
+    name: "createCampaign",
+    description: "Create a new Meta campaign. Use when the user wants to launch a new ad initiative from scratch. Always default status to PAUSED so user reviews before activating. Common objectives: OUTCOME_TRAFFIC (clicks), OUTCOME_SALES (conversions), OUTCOME_LEADS (lead gen), OUTCOME_AWARENESS (reach), OUTCOME_ENGAGEMENT (engagement), OUTCOME_APP_PROMOTION (app installs).",
+    parameters: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Human-readable campaign name" },
+        objective: { type: "string", enum: ["OUTCOME_TRAFFIC", "OUTCOME_SALES", "OUTCOME_LEADS", "OUTCOME_AWARENESS", "OUTCOME_ENGAGEMENT", "OUTCOME_APP_PROMOTION"], description: "Campaign objective" },
+        dailyBudgetCents: { type: "number", description: "Daily budget in cents (5000 = $50.00) — optional, used for CBO" },
+        lifetimeBudgetCents: { type: "number", description: "Lifetime budget in cents — alternative to daily" },
+        bidStrategy: { type: "string", enum: ["LOWEST_COST_WITHOUT_CAP", "COST_CAP", "BID_CAP", "LOWEST_COST_WITH_BID_CAP"], description: "Bid strategy (default LOWEST_COST_WITHOUT_CAP)" },
+        reason: { type: "string", description: "Why this campaign is being created" },
+      },
+      required: ["name", "objective", "reason"],
+    },
+  },
+  {
+    name: "createAdSet",
+    description: "Create an ad set under an existing Meta campaign. Use when the user wants to add a new targeting/budget unit to a campaign. Defaults: billingEvent=IMPRESSIONS, optimizationGoal=OFFSITE_CONVERSIONS for sales objectives, LINK_CLICKS for traffic.",
+    parameters: {
+      type: "object",
+      properties: {
+        campaignId: { type: "string", description: "Parent campaign ID" },
+        name: { type: "string", description: "Ad set name" },
+        dailyBudgetCents: { type: "number", description: "Daily budget in cents" },
+        lifetimeBudgetCents: { type: "number", description: "Lifetime budget in cents — alternative to daily" },
+        optimizationGoal: { type: "string", enum: ["OFFSITE_CONVERSIONS", "LINK_CLICKS", "IMPRESSIONS", "REACH", "LEAD_GENERATION", "LANDING_PAGE_VIEWS", "POST_ENGAGEMENT", "VIDEO_VIEWS"], description: "What to optimize delivery for" },
+        billingEvent: { type: "string", enum: ["IMPRESSIONS", "LINK_CLICKS"], description: "What Meta charges for (default IMPRESSIONS)" },
+        targeting: { type: "object", description: "Meta targeting spec — geo_locations, age_min, age_max, genders, interests, custom_audiences, lookalike_audiences" },
+        startTime: { type: "string", description: "ISO8601 start time" },
+        endTime: { type: "string", description: "ISO8601 end time" },
+        reason: { type: "string", description: "Why this ad set is being created" },
+      },
+      required: ["campaignId", "name", "optimizationGoal", "targeting", "reason"],
+    },
+  },
+  {
+    name: "createAd",
+    description: "Create a new ad under an existing ad set. Either reference an existing creative_id or provide an inline object_story_spec. Defaults status to PAUSED.",
+    parameters: {
+      type: "object",
+      properties: {
+        adSetId: { type: "string", description: "Parent ad set ID" },
+        name: { type: "string", description: "Ad name" },
+        creative: { type: "object", description: "Either { creative_id: 'NNN' } OR { object_story_spec: { page_id, link_data: { link, message, name, call_to_action } } }" },
+        reason: { type: "string", description: "Why this ad is being created" },
+      },
+      required: ["adSetId", "name", "creative", "reason"],
+    },
+  },
+  {
+    name: "duplicateCampaign",
+    description: "Duplicate an existing Meta campaign. Set deep=true to copy all child ad sets and ads (full clone). Set deep=false (default) for shell copy only. New campaign starts paused.",
+    parameters: {
+      type: "object",
+      properties: {
+        campaignId: { type: "string", description: "Campaign to duplicate" },
+        deep: { type: "boolean", description: "true = include all ad sets and ads; false = campaign shell only (default false)" },
+        reason: { type: "string", description: "Why duplicating (e.g. 'test new audience', 'scale winner')" },
+      },
+      required: ["campaignId", "reason"],
+    },
+  },
+  {
+    name: "duplicateAdSet",
+    description: "Duplicate an ad set within the same campaign or to a different campaign. Use for A/B testing audience or budget variants without re-creating from scratch.",
+    parameters: {
+      type: "object",
+      properties: {
+        adSetId: { type: "string", description: "Ad set to duplicate" },
+        campaignId: { type: "string", description: "Target campaign ID (omit to stay in same campaign)" },
+        reason: { type: "string", description: "Why duplicating" },
+      },
+      required: ["adSetId", "reason"],
+    },
+  },
+  {
+    name: "updateTargeting",
+    description: "Update targeting on an ad set. Accepts a partial Meta targeting spec — only specified fields change; rest preserved. Use to swap audiences, narrow geo, adjust age range, add/remove interests or behaviors, attach custom/lookalike audiences.",
+    parameters: {
+      type: "object",
+      properties: {
+        adSetId: { type: "string", description: "Ad set to update" },
+        targeting: { type: "object", description: "Partial targeting spec — geo_locations, age_min, age_max, genders, interests, behaviors, custom_audiences, lookalike_audiences" },
+        reason: { type: "string", description: "Why targeting is changing" },
+      },
+      required: ["adSetId", "targeting", "reason"],
+    },
+  },
+  {
+    name: "updateBidStrategy",
+    description: "Change bid strategy on a campaign or ad set. LOWEST_COST_WITHOUT_CAP = automatic, COST_CAP = max average cost per result (needs bidAmountCents), BID_CAP = max bid per auction (needs bidAmountCents), LOWEST_COST_WITH_BID_CAP = auto with ceiling (needs bidAmountCents).",
+    parameters: {
+      type: "object",
+      properties: {
+        campaignId: { type: "string", description: "Campaign ID (use this OR adSetId)" },
+        adSetId: { type: "string", description: "Ad set ID (use this OR campaignId)" },
+        bidStrategy: { type: "string", enum: ["LOWEST_COST_WITHOUT_CAP", "COST_CAP", "BID_CAP", "LOWEST_COST_WITH_BID_CAP"], description: "Bid strategy to apply" },
+        bidAmountCents: { type: "number", description: "Bid amount in cents (required for COST_CAP, BID_CAP, LOWEST_COST_WITH_BID_CAP)" },
+        reason: { type: "string", description: "Why changing bid strategy" },
+      },
+      required: ["bidStrategy", "reason"],
+    },
+  },
+  {
+    name: "updateCreative",
+    description: "Update an ad's creative — swap headline, body copy, CTA, link, image, or video. Provide either creativeId (reuse existing) or creative (inline new spec). Use when the user wants to refresh fatigued creative or test a new angle.",
+    parameters: {
+      type: "object",
+      properties: {
+        adId: { type: "string", description: "Ad to update" },
+        creativeId: { type: "string", description: "Existing creative_id to attach" },
+        creative: { type: "object", description: "Inline new creative spec — object_story_spec with link_data { link, message, name, call_to_action }" },
+        reason: { type: "string", description: "Why creative is changing (e.g. 'frequency 4.2, CTR declining')" },
+      },
+      required: ["adId", "reason"],
+    },
+  },
+  {
+    name: "updateSchedule",
+    description: "Update ad set start/end dates or set dayparting (adsetSchedule). Use when the user wants to extend a campaign, end early, or limit delivery to specific hours/days.",
+    parameters: {
+      type: "object",
+      properties: {
+        adSetId: { type: "string", description: "Ad set to update" },
+        startTime: { type: "string", description: "ISO8601 new start time" },
+        endTime: { type: "string", description: "ISO8601 new end time" },
+        adsetSchedule: { type: "array", items: { type: "object" }, description: "Dayparting array — [{ start_minute, end_minute, days: [1,2,3,4,5] }] (Monday=1, Sunday=7)" },
+        reason: { type: "string", description: "Why schedule is changing" },
+      },
+      required: ["adSetId", "reason"],
+    },
+  },
+  {
+    name: "createCustomAudience",
+    description: "Create a new Meta custom audience (website visitors, customer list, engagement). REQUIRES META APP REVIEW (ads_management_standard_access + custom_audiences scope). If permission missing, will return a friendly error.",
+    parameters: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Audience name" },
+        audienceSourceType: { type: "string", enum: ["WEBSITE", "CUSTOMER_FILE", "ENGAGEMENT", "APP"], description: "Source of audience" },
+        audienceRules: { type: "object", description: "Rules object — for WEBSITE: { inclusions: { operator: 'or', rules: [...] } }" },
+        reason: { type: "string", description: "Why creating this audience" },
+      },
+      required: ["name", "audienceSourceType", "reason"],
+    },
+  },
+  {
+    name: "createLookalikeAudience",
+    description: "Create a Meta lookalike audience from a source custom audience. REQUIRES META APP REVIEW (ads_management_standard_access + custom_audiences scope). Common ratios: 0.01 (1% — closest match) to 0.10 (10% — broadest).",
+    parameters: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Lookalike audience name" },
+        sourceAudienceId: { type: "string", description: "Source custom audience ID" },
+        lookalikeSpec: { type: "object", description: "{ country: 'US', ratio: 0.01 } OR { country: 'BR', starting_ratio: 0.0, ending_ratio: 0.01 }" },
+        reason: { type: "string", description: "Why creating this lookalike" },
+      },
+      required: ["name", "sourceAudienceId", "lookalikeSpec", "reason"],
+    },
+  },
+  {
+    name: "batchPauseEnable",
+    description: "Pause or enable many Meta entities (campaigns, ad sets, or ads) in one batch operation. Max 50 entities per call. Use when the user says 'pause all losers' or 'turn off these 10 ads'.",
+    parameters: {
+      type: "object",
+      properties: {
+        entityIds: { type: "array", items: { type: "string" }, description: "List of campaign/adset/ad IDs (max 50)" },
+        entityType: { type: "string", enum: ["campaign", "adset", "ad"], description: "What kind of entity (for logging)" },
+        status: { type: "string", enum: ["ACTIVE", "PAUSED"], description: "Target status" },
+        reason: { type: "string", description: "Why batch toggling" },
+      },
+      required: ["entityIds", "entityType", "status", "reason"],
+    },
+  },
+  {
+    name: "createSplitTest",
+    description: "Set up a Meta A/B split test via /ad_studies. Common types: CREATIVE (test different ads), AUDIENCE (test different targeting), PLACEMENT (test feed vs stories).",
+    parameters: {
+      type: "object",
+      properties: {
+        splitTestName: { type: "string", description: "Test name" },
+        splitTestType: { type: "string", enum: ["CREATIVE", "AUDIENCE", "PLACEMENT"], description: "What is being A/B tested" },
+        splitTestCells: { type: "array", items: { type: "object" }, description: "Variant cells — each { name, treatment } per Meta /ad_studies docs" },
+        reason: { type: "string", description: "Hypothesis being tested" },
+      },
+      required: ["splitTestName", "splitTestType", "splitTestCells", "reason"],
+    },
+  },
 ];
 
 const toolDefinitions = [
