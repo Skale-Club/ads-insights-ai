@@ -107,7 +107,7 @@ export function useChatStream({
 }: UseChatStreamOptions) {
   const [isStreaming, setIsStreaming] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
-  const pendingToolCallRef = useRef<{ messageId: string; part: ToolCallPart } | null>(null);
+  const pendingToolCallRef = useRef<{ messageId: string; part: ToolCallPart; platform: 'google' | 'meta' } | null>(null);
 
   const aiSdkChat = useChatV2({
     apiKey,
@@ -329,7 +329,7 @@ export function useChatStream({
 
                   const toolPart = createToolPart(toolName, toolCall?.function?.arguments || '{}');
                   assistantParts = [...assistantParts, toolPart];
-                  pendingToolCallRef.current = { messageId: assistantMessage.id, part: toolPart };
+                  pendingToolCallRef.current = { messageId: assistantMessage.id, part: toolPart, platform };
 
                   updateAssistantMessage(assistantMessage.id, (message) => ({
                     ...message,
@@ -385,7 +385,7 @@ export function useChatStream({
 
   const approveTool = useCallback(async () => {
     const pending = pendingToolCallRef.current;
-    const isMeta = platform === 'meta';
+    const isMeta = pending?.platform === 'meta';
 
     if (!pending) return;
     if (isMeta && (!metaAccessToken || !metaAccountId)) return;
@@ -399,9 +399,9 @@ export function useChatStream({
     if (isMeta) {
       // Map Gemini tool names to meta-mutate actions
       const toolName = pending.part.toolName;
-      const input = pending.part.input as Record<string, any>;
+      const input = pending.part.input as Record<string, unknown>;
       let action: string;
-      const body: Record<string, any> = { accessToken: metaAccessToken, accountId: metaAccountId };
+      const body: Record<string, unknown> = { accessToken: metaAccessToken, accountId: metaAccountId };
 
       // Read-only tools — no mutation, skip meta-mutate
       if (toolName === 'analyzeCreative' || toolName === 'queryMetaData') {

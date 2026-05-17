@@ -184,3 +184,13 @@
 1. **IP-4** — `src/hooks/use-chat-stream.ts`: Platform race condition in `approveTool`. `pendingToolCallRef` does not snapshot `platform` at tool-call capture time. If user switches platform while a tool call is pending approval, `approveTool` uses the new platform value and routes the mutation to the wrong edge function. Fix: add `platform` field to `pendingToolCallRef` type and snapshot current `platform` when setting `pendingToolCallRef.current`. In `approveTool`, read `const isMeta = pending.platform === 'meta'`.
 
 2. **IP-7** — `src/pages/dashboard/Recommendations.tsx`: `currencyCode` declared at line 645 but referenced in `useMemo` dependency arrays at lines 463 and 616, which are evaluated before line 645. Move `currencyCode` declaration to immediately after `const isMeta = platform === 'meta'` (line 211) so it precedes all useMemo calls that depend on it. Also impacts `campaignContext` memo body at line 445.
+
+### Deferred Issues (Out of Scope This Plan)
+
+- **ChatPanel.tsx `handleSubmit` Google-only guard:** `handleSubmit` in `src/components/dashboard/chat/ChatPanel.tsx` (line 196-221) checks `if (!selectedAccount?.id)` and shows a toast "Choose a Google Ads account before sending messages" even when `platform === 'meta'`. Meta users with no Google account connected cannot use the AI chat. This file is not in `files_modified` for plan 03-02 so it is deferred to a follow-up plan.
+
+## Resolution Log
+
+- **IP-4 fix** — `src/hooks/use-chat-stream.ts`, lines 110 and 332 and 388: Extended `pendingToolCallRef` type to include `platform` field. Snapshot `platform` at tool-call capture time (`pendingToolCallRef.current = { ..., platform }`). In `approveTool`, changed `const isMeta = platform === 'meta'` → `const isMeta = pending?.platform === 'meta'` so the platform used for routing is the one active when the tool call was initiated, not the (potentially changed) current platform.
+
+- **IP-7 fix** — `src/pages/dashboard/Recommendations.tsx`, line 211→215 (moved from 649): Moved `const currencyCode = isMeta ? safeCurrency(selectedMetaAccount?.currency) : safeCurrency(selectedAccount?.currencyCode)` from after all `useMemo` hooks to immediately after `const isMeta = platform === 'meta'`. Removed duplicate declaration at original location. This eliminates the temporal dead zone access in `useMemo` dependency arrays.

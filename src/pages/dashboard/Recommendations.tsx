@@ -210,6 +210,10 @@ export default function RecommendationsPage() {
 
   const isMeta = platform === 'meta';
 
+  const currencyCode = isMeta
+    ? safeCurrency(selectedMetaAccount?.currency)
+    : safeCurrency(selectedAccount?.currencyCode);
+
   // Load AI settings
   useEffect(() => {
     if (!user?.id) return;
@@ -642,9 +646,6 @@ export default function RecommendationsPage() {
 
   const activeRecommendations = isMeta ? metaRecommendations : recommendations;
   const isLoadingActive = isMeta ? isLoadingMetaData : isLoadingData;
-  const currencyCode = isMeta
-    ? safeCurrency(selectedMetaAccount?.currency)
-    : safeCurrency(selectedAccount?.currencyCode);
 
   if (!isMeta && !selectedAccount) {
     return (
