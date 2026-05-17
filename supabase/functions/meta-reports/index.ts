@@ -1,12 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { z } from "npm:zod@3.22.4";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeadersFor, preflightResponse } from "../_shared/cors.ts";
 
 const META_API = "https://graph.facebook.com/v20.0";
 
@@ -114,9 +109,8 @@ async function metaGet(url: string): Promise<Record<string, unknown>> {
 }
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  if (req.method === "OPTIONS") return preflightResponse(req);
+  const corsHeaders = corsHeadersFor(req);
 
   try {
     const body = await req.json();
