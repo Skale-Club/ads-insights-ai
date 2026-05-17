@@ -5,7 +5,7 @@ import { useDashboard } from '@/contexts/DashboardContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { format } from 'date-fns';
 
-type MetaReportType = 'overview' | 'campaigns' | 'adsets' | 'ads' | 'insights_by_placement' | 'daily_performance';
+type MetaReportType = 'overview' | 'campaigns' | 'adsets' | 'ads' | 'insights_by_placement' | 'daily_performance' | 'audiences' | 'placements' | 'conversions' | 'pixel-events' | 'budgets-detail';
 
 interface UseMetaReportOptions {
   enabled?: boolean;
