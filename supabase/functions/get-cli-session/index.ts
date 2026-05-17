@@ -1,16 +1,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { z } from "npm:zod@3.22.4";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeadersFor, preflightResponse } from "../_shared/cors.ts";
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  if (req.method === "OPTIONS") return preflightResponse(req);
+  const corsHeaders = corsHeadersFor(req);
 
   try {
     const body = await req.json();
@@ -44,25 +39,35 @@ serve(async (req) => {
       .from("cli_sessions")
       .select("provider_token, customer_id, customer_name, expires_at")
       .eq("session_token", session_token)
-      .single();
+      .maybeSingle();
+
+    // Constant-ish delay on any auth failure to defeat timing oracles that
+    // would let an attacker tell "valid token, expired" apart from "no such token".
+    const failResponse = (body: Record<string, unknown>) =>
+      new Promise<Response>((resolve) =>
+        setTimeout(
+          () =>
+            resolve(
+              new Response(JSON.stringify(body), {
+                status: 401,
+                headers: { ...corsHeaders, "Content-Type": "application/json" },
+              }),
+            ),
+          150,
+        ),
+      );
 
     if (error || !session) {
-      return new Response(
-        JSON.stringify({ error: "Session not found or revoked" }),
-        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return await failResponse({ error: "Invalid or revoked session" });
     }
 
     const isExpired = new Date(session.expires_at) < new Date();
     if (isExpired) {
-      return new Response(
-        JSON.stringify({
-          error: "Session expired. Please reactivate Claude Code Access in the app Settings.",
-          expired: true,
-          expires_at: session.expires_at,
-        }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return await failResponse({
+        error: "Session expired. Please reactivate Claude Code Access in the app Settings.",
+        expired: true,
+        expires_at: session.expires_at,
+      });
     }
 
     return new Response(
