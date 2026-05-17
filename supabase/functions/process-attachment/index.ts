@@ -1,10 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-
-const corsHeaders = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers":
-        "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version",
-};
+import { corsHeadersFor, preflightResponse } from "../_shared/cors.ts";
 
 interface ProcessRequest {
     type: 'audio' | 'image';
@@ -15,20 +10,23 @@ interface ProcessRequest {
 }
 
 serve(async (req) => {
-    if (req.method === "OPTIONS") {
-        return new Response(null, { headers: corsHeaders });
-    }
+    if (req.method === "OPTIONS") return preflightResponse(req);
+    const corsHeaders = {
+        ...corsHeadersFor(req),
+        "Access-Control-Allow-Headers":
+            "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version",
+    };
 
     try {
         const body: ProcessRequest = await req.json();
         const { type, data, mimeType, apiKey, prompt } = body;
 
         if (type === 'audio') {
-            return await processAudio(data, mimeType, apiKey);
+            return await processAudio(data, mimeType, apiKey, corsHeaders);
         }
 
         if (type === 'image') {
-            return await processImage(data, mimeType, apiKey, prompt);
+            return await processImage(data, mimeType, apiKey, corsHeaders, prompt);
         }
 
         return new Response(
@@ -44,7 +42,7 @@ serve(async (req) => {
     }
 });
 
-async function processAudio(data: string, mimeType: string, apiKey?: string) {
+async function processAudio(data: string, mimeType: string, apiKey: string | undefined, corsHeaders: Record<string, string>) {
     if (!apiKey) {
         return new Response(
             JSON.stringify({ error: "API key required for audio transcription" }),
@@ -104,7 +102,7 @@ async function processAudio(data: string, mimeType: string, apiKey?: string) {
     );
 }
 
-async function processImage(data: string, mimeType: string, apiKey?: string, prompt?: string) {
+async function processImage(data: string, mimeType: string, apiKey: string | undefined, corsHeaders: Record<string, string>, prompt?: string) {
     if (!apiKey) {
         return new Response(
             JSON.stringify({ error: "API key required for image analysis" }),
