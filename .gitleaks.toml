@@ -1,0 +1,16 @@
+title = "Ads Insights AI - Gitleaks Config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Project-level allowlist"
+paths = [
+  "package-lock.json",
+  ".git/",
+]
+# Supabase anon key is public by design (safe to commit)
+regexes = [
+  "SUPABASE_PUBLISHABLE_KEY",
+  "VITE_SUPABASE_ANON_KEY",
+]

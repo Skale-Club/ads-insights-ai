@@ -19,7 +19,7 @@ export function AccountSection() {
           <div className="flex flex-col items-center py-6 text-center border rounded-lg bg-muted/20">
             <p className="text-muted-foreground mb-2">No accounts found</p>
             <Button variant="outline" size="sm" asChild>
-              <a href="/connect/google-ads">Connect Account</a>
+              <a href="/connect/ads">Connect Account</a>
             </Button>
           </div>
         ) : (
